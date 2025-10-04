@@ -2,6 +2,10 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { Home, User, LogOut } from "lucide-react";
 import { Divider } from "antd";
 import { useUserAuth } from "../context/userAuthContext";
+import medcross from "../assets/medcross.svg";
+import { ExclamationCircleFilled } from '@ant-design/icons';
+import { Button, Modal, Space } from 'antd';
+const { confirm } = Modal;
 
 export default function Sidebar() {
   const navigate = useNavigate();
@@ -26,11 +30,25 @@ export default function Sidebar() {
     },
   ];
 
+  const showDeleteConfirm = () => {
+  confirm({
+    title: 'Are you sure delete this task?',
+    icon: <ExclamationCircleFilled />,
+    content: 'Some descriptions',
+    okText: 'Yes',
+    okType: 'danger',
+    cancelText: 'No',
+    onOk() {
+      handleSignOut();
+    },
+  });
+};
+
   return (
     <aside className="sidebar">
       <div className="rail">
-          <div className="logo">
-            <img src="/icon/telemedicine.svg" alt="Logo" />
+          <div className="sidebar-logo">
+            <img src={medcross} alt="Logo" />
           </div>
         <Divider style={{ margin: 0}} />
         {/* ===== เมนูหลัก ===== */}

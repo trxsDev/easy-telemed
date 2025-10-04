@@ -5,11 +5,10 @@ import App from "./App.jsx";
 import { UserAuthContextProvider } from "./context/userAuthContext.jsx";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import Layout from "./Layout.jsx";
-import SignIn from "./container/SignIn/SignIn.jsx";
-import SignUp from "./container/SignUp/SignUp.jsx";
+import SignIn from "./container/SignIn";
+import SignUp from "./container/SignUp";
 import Home from "./container/Home.jsx";
-import TelemedRoom from "./container/TelemedRoom.jsx";
-import signOutAction from "./services/signOutAction.js";
+import TelemedRoom from "./container/TelemedRoom";
 import ProtectedRoute  from "./auth/protectedRoute.jsx";
 
 const router = createBrowserRouter([
@@ -17,13 +16,6 @@ const router = createBrowserRouter([
   { path: "/", element: <App /> },
   { path: "/signin", element: <SignIn /> },
   { path: "/signup", element: <SignUp /> },
-  {
-    path: "/signout",
-    action: async () => {
-      await signOutAction();
-    },
-  },
-
   // กลุ่มที่มี Layout ครอบ
   {
     path: "/easy-telemed/",

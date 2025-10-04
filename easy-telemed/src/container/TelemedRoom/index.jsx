@@ -2,7 +2,9 @@ import React from 'react'
 
 function TelemedRoom() {
   return (
-    <div>TelemedRoom</div>
+    <div>
+      <h1>Telemed Room</h1>
+    </div>
   )
 }
 

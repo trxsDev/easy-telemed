@@ -12,14 +12,7 @@ function Home() {
 
   return (
     <div>
-      <h1>Home</h1>
-      {user && (
-        <div>
-          <div>Auth uid : {user?.uid}</div>
-          <div>Email : {user?.email}</div>
-          <div>Token : {user?.stsTokenManager?.accessToken}</div>
-        </div>
-      )}
+      <h1>Dashboard@Home</h1>
       <p>This is the home page.</p>
     </div>
   );
