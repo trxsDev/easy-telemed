@@ -1,0 +1,27 @@
+/* src/components/sidebar.css */
+nav{
+    border-radius: 8px;
+}
+.menu {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.menu li + li {
+  margin-top: 8px;
+}
+.menu-link {
+  display: block;
+  padding: 10px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #e5e7eb;
+}
+.menu-link:hover {
+  background: #374151;
+}
+.menu-link.active {
+  background: #111827;
+  color: #ffffff;
+  font-weight: 600;
+}

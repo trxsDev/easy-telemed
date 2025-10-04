@@ -1,0 +1,93 @@
+/* src/layout.css */
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar: เป็นคอลัมน์ สูงทั้งจอ */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* ให้ sidebar สูงเท่าจอ และคงตำแหน่งเวลา page เลื่อน */
+  height: 90vh;
+  position: sticky;
+  top: 0;
+
+  /* ระยะหายใจ */
+  padding: 32px 8px 8px 8px;
+  margin-left: 10px;
+
+  /* สำคัญ: อย่าให้มี overflow:hidden ในชั้นนี้ */
+  overflow: visible;
+  gap: 12px;
+}
+
+/* กล่องเมนู (เลื่อนที่นี่) */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 12px 8px;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.08);
+
+  /* ตัวชี้ขาดให้เลื่อนได้ใน flex container */
+  flex: 1;                 /* กินพื้นที่แนวตั้งที่เหลือ */
+  min-height: 0;           /* อนุญาตให้หดตัวเพื่อ overflow ทำงาน */
+  overflow-y: auto;        /* เลื่อนในนี้ */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* โลโก้ด้านบน */
+.logo {
+  width: 40px;
+  height: 40px;
+  margin: 24px 0;          /* แก้จากตัวอักษรไทยที่พิมพ์หลุด */
+}
+.logo img {
+  width: 100%;
+  height: 100%;
+}
+
+/* เมนู */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  /* ไม่ต้อง flex:1 ที่นี่ เพราะให้ .rail เป็นตัวยืดหลัก */
+}
+.menu-item {
+  color: #9ca3af;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  transition: background 0.2s, color 0.2s;
+}
+.menu-item:hover {
+  background: #f3f4f6;
+  color: #6d28d9;
+}
+.menu-item.active {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+/* ปุ่ม logout ล่างสุดคงที่ */
+.logout {
+    flex:end;
+  margin-top: auto;
+}
+
+/* Content ด้านขวา */
+.content {
+  flex: 1;
+  padding: 24px;
+  /* ถ้าหน้ายาว ให้เลื่อนที่พื้นที่ content นี้ตามปกติ */
+  overflow: auto;
+  min-width: 0;            /* ป้องกัน overflow แนวนอนใน flex layout */
+}
