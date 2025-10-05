@@ -10,7 +10,7 @@ import SignIn from "./container/SignIn";
 import SignUp from "./container/SignUp";
 import Home from "./container/Home.jsx";
 import TelemedRoom from "./container/TelemedRoom";
-import ProtectedRoute  from "./auth/protectedRoute.jsx";
+import ProtectedRoute  from "./auth/ProtectedRoute.jsx";
 
 
 const router = createBrowserRouter([
