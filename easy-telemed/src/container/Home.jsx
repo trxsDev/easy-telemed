@@ -1,5 +1,5 @@
 import { useState,useEffect } from "react";
-import { useUserAuth } from "../context/userAuthContext";
+import { useUserAuth } from "../context/UserAuthContext";
 function Home() {
   const [userAuth, setUserAuth] = useState([]);
   const { user } = useUserAuth();

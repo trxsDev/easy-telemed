@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { Home, User, LogOut } from "lucide-react";
 import { Divider } from "antd";
-import { useUserAuth } from "../context/userAuthContext";
+import { useUserAuth } from "../context/UserAuthContext";
 import medcross from "../assets/medcross.svg";
 import { ExclamationCircleFilled } from '@ant-design/icons';
 import { Button, Modal, Space } from 'antd';
