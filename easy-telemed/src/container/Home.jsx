@@ -1,8 +1,8 @@
 import { useState,useEffect } from "react";
-import { useUserAuth } from "../context/UserAuthContext";
+import { useUserAuthSupabase } from "../context/UserAuthContextSupabase";
 function Home() {
   const [userAuth, setUserAuth] = useState([]);
-  const { user } = useUserAuth();
+  const { user } = useUserAuthSupabase();
   console.log("User in Home:", user);
   useEffect(() => {
     if (user) {
@@ -13,6 +13,7 @@ function Home() {
   return (
     <div>
       <h1>Dashboard@Home</h1>
+      <h2>Welcome, {userAuth.username}</h2>
       <p>This is the home page.</p>
     </div>
   );

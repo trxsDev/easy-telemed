@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { Home, User, LogOut } from "lucide-react";
 import { Divider } from "antd";
-import { useUserAuth } from "../context/UserAuthContext";
+import { useUserAuthSupabase } from "../context/UserAuthContextSupabase";
 import medcross from "../assets/medcross.svg";
 import { ExclamationCircleFilled } from '@ant-design/icons';
 import { Button, Modal, Space } from 'antd';
@@ -9,7 +9,7 @@ const { confirm } = Modal;
 
 export default function Sidebar() {
   const navigate = useNavigate();
-  const { logOut } = useUserAuth();
+  const { logOut } = useUserAuthSupabase();
 
   const handleSignOut = async () => {
     try {

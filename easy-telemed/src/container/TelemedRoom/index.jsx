@@ -1,7 +1,7 @@
-import React,{useState, useRef} from "react";
+import React,{useState, useRef, useEffect} from "react";
 import { Button ,Input, message} from "antd";
-import { db } from "../../firebase";
-import { collection, doc, setDoc, addDoc, getDoc, updateDoc, onSnapshot } from "firebase/firestore";
+import { supabase } from "../../api/SupabaseClient";
+import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 
 function TelemedRoom() {
 
@@ -15,6 +15,8 @@ const remoteVideoRef = useRef(null);
 const pcRef = useRef(null);
 const localStreamRef = useRef(null);
 const remoteStreamRef = useRef(new MediaStream());
+const channelsRef = useRef([]); // Store active channels for cleanup
+const { user } = useUserAuthSupabase();
   // WebRTC
   const servers = {
     iceServers: [
@@ -24,6 +26,43 @@ const remoteStreamRef = useRef(new MediaStream());
     ],
     iceCandidatePoolSize: 10,
   };
+
+// Set up Supabase auth for RLS
+useEffect(() => {
+  if (user && user.uid) {
+    // Set auth context for Supabase RLS
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session && user.accessToken) {
+        // If using Firebase auth, you might need to create a custom token
+        // For now, we'll use a simple approach
+        console.log('User logged in:', user.uid);
+      }
+    });
+  }
+}, [user]);
+
+// Cleanup on component unmount
+useEffect(() => {
+  return () => {
+    // Clean up when component unmounts
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+    }
+    
+    if (pcRef.current) {
+      pcRef.current.close();
+    }
+    
+    // Cleanup all channels
+    channelsRef.current.forEach(channel => {
+      try {
+        supabase.removeChannel(channel);
+      } catch(_) {}
+    });
+  };
+}, []);
 
 const getPeer = () => {
   if (!pcRef.current) {
@@ -53,26 +92,86 @@ const createCall = async () => {
   setCreating(true);
   try {
     const pc = getPeer();
-    const callDocRef = doc(collection(db,'calls'));
-    setCallId(callDocRef.id); setCallInput(callDocRef.id);
-    const offerCandidatesCol = collection(callDocRef,'offerCandidates');
-    const answerCandidatesCol = collection(callDocRef,'answerCandidates');
-    pc.onicecandidate = async (ev)=>{ if(ev.candidate) await addDoc(offerCandidatesCol, ev.candidate.toJSON()); };
+    
+    // Create a new video call record in Supabase
+    const { data: callData, error: callError } = await supabase
+      .from('video_calls')
+      .insert({
+        call_status: 'waiting'
+      })
+      .select()
+      .single();
+    
+    if (callError) throw callError;
+    
+    const callId = callData.id;
+    setCallId(callId); 
+    setCallInput(callId);
+    
+    // Handle ICE candidates
+    pc.onicecandidate = async (ev) => {
+      if (ev.candidate) {
+        await supabase
+          .from('ice_candidates')
+          .insert({
+            call_id: callId,
+            candidate_type: 'offer',
+            candidate: ev.candidate.toJSON()
+          });
+      }
+    };
+    
     const offerDesc = await pc.createOffer();
     await pc.setLocalDescription(offerDesc);
-    await setDoc(callDocRef, { offer: { type: offerDesc.type, sdp: offerDesc.sdp } });
-    onSnapshot(callDocRef, snap => {
-      const data = snap.data();
-      if (data?.answer && !pc.currentRemoteDescription) {
-        pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      }
-    });
-    onSnapshot(answerCandidatesCol, snap => {
-      snap.docChanges().forEach(c => { if (c.type === 'added') pc.addIceCandidate(new RTCIceCandidate(c.doc.data())); });
-    });
+    
+    // Update call with offer
+    await supabase
+      .from('video_calls')
+      .update({ 
+        offer: { type: offerDesc.type, sdp: offerDesc.sdp },
+        call_status: 'ringing'
+      })
+      .eq('id', callId);
+    
+    // Listen for answer
+    const callChannel = supabase
+      .channel(`call-${callId}`)
+      .on('postgres_changes', 
+        { event: 'UPDATE', schema: 'public', table: 'video_calls', filter: `id=eq.${callId}` },
+        (payload) => {
+          const data = payload.new;
+          if (data?.answer && !pc.currentRemoteDescription) {
+            pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          }
+        }
+      )
+      .subscribe();
+    
+    // Listen for answer candidates
+    const answerCandidatesChannel = supabase
+      .channel(`answer-candidates-${callId}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ice_candidates', filter: `call_id=eq.${callId} and candidate_type=eq.answer` },
+        (payload) => {
+          const data = payload.new;
+          if (data?.candidate) {
+            pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        }
+      )
+      .subscribe();
+    
+    // Store channels for cleanup
+    channelsRef.current.push(callChannel, answerCandidatesChannel);
+    
     message.success('สร้าง Call สำเร็จ');
-  } catch(e){ console.error(e); message.error('สร้าง Call ล้มเหลว'); }
-  finally { setCreating(false); }
+  } catch(e){ 
+    console.error(e); 
+    message.error('สร้าง Call ล้มเหลว'); 
+  }
+  finally { 
+    setCreating(false); 
+  }
 };
 
 const answerCall = async () => {
@@ -81,29 +180,140 @@ const answerCall = async () => {
   setAnswering(true);
   try {
     const pc = getPeer();
-    const callDocRef = doc(collection(db,'calls'), callInput.trim());
-    const answerCandidatesCol = collection(callDocRef,'answerCandidates');
-    const offerCandidatesCol = collection(callDocRef,'offerCandidates');
-    pc.onicecandidate = async (ev)=>{ if(ev.candidate) await addDoc(answerCandidatesCol, ev.candidate.toJSON()); };
-    const snap = await getDoc(callDocRef);
-    if (!snap.exists()) { message.error('ไม่พบ Call'); return; }
-    const data = snap.data();
-    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+    const callId = callInput.trim();
+    
+    // Handle ICE candidates
+    pc.onicecandidate = async (ev) => {
+      if (ev.candidate) {
+        await supabase
+          .from('ice_candidates')
+          .insert({
+            call_id: callId,
+            candidate_type: 'answer',
+            candidate: ev.candidate.toJSON()
+          });
+      }
+    };
+    
+    // Get the call data
+    const { data: callData, error: callError } = await supabase
+      .from('video_calls')
+      .select('*')
+      .eq('id', callId)
+      .single();
+    
+    if (callError || !callData) { 
+      message.error('ไม่พบ Call'); 
+      return; 
+    }
+    
+    if (!callData.offer) {
+      message.error('Call ยังไม่มี offer');
+      return;
+    }
+    
+    await pc.setRemoteDescription(new RTCSessionDescription(callData.offer));
     const answerDesc = await pc.createAnswer();
     await pc.setLocalDescription(answerDesc);
-    await updateDoc(callDocRef, { answer: { type: answerDesc.type, sdp: answerDesc.sdp } });
-    onSnapshot(offerCandidatesCol, s => {
-      s.docChanges().forEach(c=>{ if(c.type==='added') pc.addIceCandidate(new RTCIceCandidate(c.doc.data())); });
-    });
+    
+    // Update call with answer
+    await supabase
+      .from('video_calls')
+      .update({ 
+        answer: { type: answerDesc.type, sdp: answerDesc.sdp },
+        call_status: 'connected'
+      })
+      .eq('id', callId);
+    
+    // Listen for offer candidates
+    const offerCandidatesChannel = supabase
+      .channel(`offer-candidates-${callId}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'ice_candidates', filter: `call_id=eq.${callId} and candidate_type=eq.offer` },
+        (payload) => {
+          const data = payload.new;
+          if (data?.candidate) {
+            pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        }
+      )
+      .subscribe();
+    
+    // Store channels for cleanup
+    channelsRef.current.push(offerCandidatesChannel);
+    
     message.success('Answer สำเร็จ');
-  } catch(e){ console.error(e); message.error('Answer ล้มเหลว'); }
-  finally { setAnswering(false); }
+  } catch(e){ 
+    console.error(e); 
+    message.error('Answer ล้มเหลว'); 
+  }
+  finally { 
+    setAnswering(false); 
+  }
 };
 
-const hangup = () => {
-  try { pcRef.current?.getSenders().forEach(s=>{ try { s.track.stop(); } catch(_){} }); pcRef.current?.close(); } catch(_){}
-  pcRef.current=null; localStreamRef.current=null; remoteStreamRef.current=new MediaStream();
-  setWebcamStarted(false); setCallId(""); setCallInput("");
+const hangup = async () => {
+  try { 
+    // Stop all local media tracks (camera and microphone)
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped track:', track.kind);
+      });
+    }
+    
+    // Stop all tracks from peer connection
+    pcRef.current?.getSenders().forEach(s=>{ 
+      try { 
+        if (s.track) {
+          s.track.stop();
+        }
+      } catch(_){} 
+    }); 
+    
+    // Close peer connection
+    pcRef.current?.close(); 
+    
+    // Clear video elements
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    
+    // Update call status in database
+    if (callId) {
+      await supabase
+        .from('video_calls')
+        .update({ 
+          call_status: 'ended',
+          ended_at: new Date().toISOString()
+        })
+        .eq('id', callId);
+    }
+    
+    // Cleanup subscriptions
+    channelsRef.current.forEach(channel => {
+      try {
+        supabase.removeChannel(channel);
+      } catch(_) {}
+    });
+    channelsRef.current = [];
+    
+  } catch(error){
+    console.error('Error during hangup:', error);
+  }
+  
+  // Reset state
+  pcRef.current = null; 
+  localStreamRef.current = null; 
+  remoteStreamRef.current = new MediaStream();
+  setWebcamStarted(false); 
+  setCallId(""); 
+  setCallInput("");
+  
+  message.success('วางสายแล้ว กล้องและไมโครโฟนถูกปิด');
 };
 
   return (

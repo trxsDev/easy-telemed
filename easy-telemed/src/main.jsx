@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.jsx";
 // NOTE: filename is 'UserAuthContext.jsx' (capital U) - fix casing for case-sensitive builds
-import { UserAuthContextProvider } from "./context/UserAuthContext.jsx";
+import { UserAuthContextSupabaseProvider } from "./context/UserAuthContextSupabase.jsx";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import Layout from "./Layout.jsx";
 import SignIn from "./container/SignIn";
@@ -45,8 +45,8 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <UserAuthContextProvider>
+    <UserAuthContextSupabaseProvider>
       <RouterProvider router={router} />
-    </UserAuthContextProvider>
+    </UserAuthContextSupabaseProvider>
   </StrictMode>
 );

@@ -10,7 +10,6 @@ export default function App() {
     <>
       <TopBar />
       <div className="app-content">
-
     
       </div>
     </>
