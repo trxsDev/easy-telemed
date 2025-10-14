@@ -1,0 +1,16 @@
+{
+    "welcome": "Welcome to our application",
+    "doctorRegister": "Doctor Register",
+    "signIn": "Sign In",
+    "USER_DASHBOARD": "User Dashboard",
+    "PATIENT": "Patient",
+    "DOCTOR": "Doctor",
+    "VIEW": "View",
+    "NO": "No",
+    "FULLNAME": "Full Name",
+       "EMAIL": "Email",
+    "CREDENTIAL": "Credential",
+    "VERIFIED": "Verified",
+    "WELCOME": "Welcome",
+    "GREETING": "How are you today?"
+}

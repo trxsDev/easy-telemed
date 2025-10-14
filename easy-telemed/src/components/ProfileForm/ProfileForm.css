@@ -1,0 +1,52 @@
+.profile-form-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.profile-form-container .ant-steps-item-title {
+  font-size: 14px !important;
+}
+
+.profile-form-container .ant-steps-item-description {
+  font-size: 12px !important;
+}
+
+.profile-form-container .ant-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.profile-form-container .ant-progress-text {
+  color: #1890ff !important;
+  font-weight: 500;
+}
+
+.profile-form-container .ant-form-item-label > label {
+  font-weight: 500;
+}
+
+.profile-form-container .ant-btn-lg {
+  height: 44px;
+  padding: 0 24px;
+  font-size: 16px;
+}
+
+.profile-form-container .ant-card-head-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .profile-form-container {
+    padding: 16px;
+  }
+  
+  .profile-form-container .ant-steps {
+    overflow-x: auto;
+  }
+  
+  .profile-form-container .ant-steps-item-title {
+    font-size: 12px !important;
+  }
+}

@@ -1,22 +1,38 @@
 import React, { useState } from "react";
 import {Link, useNavigate } from "react-router-dom";
-import { Form, Alert, Input, Button, Typography, Space, Card } from "antd";
+import { Form, Alert, Input, Button, Typography, Space, Card, message } from "antd";
 import { useUserAuthSupabase } from "../context/UserAuthContextSupabase";
+import {ChevronLeft} from "lucide-react";
 
 function SignUpForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const { signUp } = useUserAuthSupabase();
+  const [loading, setLoading] = useState(false);
 
   let navigate = useNavigate();
-  const handeSubmit = async (e) => {
+  const handeSubmit = async () => {
     setError("");
+    setLoading(true);
     try {
-      await signUp(email,password)
-      navigate("/");
-    }catch (err) {
-      setError(err.message);
+      console.log('Starting signup process...');
+      const { data, error } = await signUp(email, password);
+      console.log('Signup result:', { data, error });
+      
+      if (error) {
+        throw error;
+      }
+      
+      // Trigger in backend will create app_users row (role=patient)
+      message.success('Account created successfully! Please check your email to verify.');
+      console.log('Navigating to verify-email...');
+      navigate("/verify-email");
+    } catch (err) {
+      console.error('Signup error:', err);
+      setError(err.message || 'An error occurred during signup');
+    } finally {
+      setLoading(false);
     }
   };
  return (
@@ -29,9 +45,25 @@ function SignUpForm() {
         style={{
           borderRadius: '12px',
           boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-          border: 'none'
+          border: 'none',
+          position: 'relative'
         }}
+        bodyStyle={{ paddingTop: 48 }}
       >
+        <Button
+          type="text"
+          icon={<ChevronLeft />}
+          onClick={() => navigate('/')}
+          style={{
+            position: 'absolute',
+            left: 8,
+            top: 8,
+            color: '#667eea',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '4px 8px'
+          }}
+        />
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <div style={{ textAlign: 'center' }}>
             <Typography.Title level={2} style={{ margin: 0, color: '#333' }}>
@@ -82,11 +114,13 @@ function SignUpForm() {
             </Form.Item>
 
             <Form.Item>
-              <Button 
-                type="primary" 
-                htmlType="submit" 
-                block 
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
                 size="large"
+                loading={loading}
+                disabled={!email || !password}
                 style={{
                   borderRadius: '8px',
                   background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -96,7 +130,7 @@ function SignUpForm() {
                   fontWeight: '500'
                 }}
               >
-                Create Account
+                {loading ? 'Creating...' : 'Create Account'}
               </Button>
             </Form.Item>
           </Form>

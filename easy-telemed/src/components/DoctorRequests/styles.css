@@ -1,0 +1,45 @@
+:root {
+  --register-bg: linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%);
+  --card-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  --card-shadow-hover: 0 8px 20px rgba(0,0,0,0.12);
+  --brand-primary: #1677ff;
+}
+
+.card-register {
+  /* width: 100%; */
+  width: 450px;
+  max-width: 760px;
+  border-radius: 20px !important;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow .25s ease, transform .25s ease;
+  background: #fff;
+  position: relative;
+  overflow: hidden;
+  
+}
+
+.doctor-request-table {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 20px !important;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow .25s ease, transform .25s ease;
+  background: #fff;
+  position: relative;
+  overflow: hidden;
+  margin: 0 !important;
+}
+
+.doctor-request-table:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 85% 15%, rgba(22,119,255,0.12), transparent 60%),
+              radial-gradient(circle at 15% 85%, rgba(22,119,255,0.08), transparent 60%);
+  pointer-events: none;
+}
+
+.doctor-request-table:hover {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-2px);
+}

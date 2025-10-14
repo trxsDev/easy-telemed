@@ -1,0 +1,94 @@
+:root {
+  --register-bg: linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%);
+  --card-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  --card-shadow-hover: 0 8px 20px rgba(0,0,0,0.12);
+  --brand-primary: #1677ff;
+}
+
+.register-form-wrapper {
+  min-height: 100%;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 48px 16px 64px;
+  background: var(--register-bg);
+  background-attachment: fixed;
+}
+
+.card-register {
+  width: 100%;
+  max-width: 800px;
+  min-width: 600px;
+  border-radius: 20px !important;
+  padding: 32px 40px;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow .25s ease, transform .25s ease;
+  background: #fff;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-register:before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 85% 15%, rgba(22,119,255,0.12), transparent 60%),
+              radial-gradient(circle at 15% 85%, rgba(22,119,255,0.08), transparent 60%);
+  pointer-events: none;
+}
+
+.card-register:hover {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-2px);
+}
+
+.card-register__header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.card-register__icon {
+  font-size: 42px;
+  color: var(--brand-primary);
+  background: rgba(22,119,255,0.1);
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.subtitle {
+  font-size: 13px;
+}
+
+.register-form .ant-form-item-label > label {
+  font-weight: 500;
+}
+
+.register-form .ant-input, .register-form .ant-select-selector, .register-form .ant-input-password {
+  border-radius: 10px !important;
+}
+
+.register-form .ant-input:focus, .register-form .ant-select-focused .ant-select-selector, .register-form .ant-input-affix-wrapper-focused {
+  box-shadow: 0 0 0 2px rgba(22,119,255,.2);
+}
+
+.register-form button[type="submit"] {
+  height: 46px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--brand-primary), #4096ff);
+}
+
+.register-form button[type="submit"]:hover {
+  filter: brightness(1.05);
+}
+
+@media (max-width: 640px) {
+  .card-register {
+    padding: 28px 24px 36px;
+    border-radius: 16px !important;
+  }
+  .card-register__icon { font-size: 36px; }
+}
