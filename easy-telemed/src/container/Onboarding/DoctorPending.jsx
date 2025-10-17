@@ -3,7 +3,6 @@ import { Card, Typography, Upload, Form, Input, Button, Space, Alert, Select, me
 import { InboxOutlined } from '@ant-design/icons';
 import { useUserAuthSupabase } from '../../context/UserAuthContextSupabase';
 import specializationData from "../../specialization.json";
-import { useTranslation } from "react-i18next";
 import { supabase } from '../../api/SupabaseClient';
 
 /* Placeholder onboarding page for doctor_pending role.
@@ -16,7 +15,6 @@ import { supabase } from '../../api/SupabaseClient';
 const { Title, Text } = Typography;
 
 export default function DoctorPending() {
-  const { t, i18n } = useTranslation();
   const { user, role, verify } = useUserAuthSupabase();
   const isPending = role === 'doctor' && verify === false;
   const [form] = Form.useForm();
@@ -35,7 +33,11 @@ export default function DoctorPending() {
           .from('provider_applications')
           .select('*')
           .eq('applicant_user_id', user.user_id)
-          .single();
+          .maybeSingle();
+
+        if (error && error.code !== 'PGRST116') {
+          console.warn('Failed to fetch existing application:', error);
+        }
 
         if (data) {
           setInitialData(data);
@@ -105,7 +107,7 @@ export default function DoctorPending() {
         return null;
       }
 
-      let { data, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('credentials')
         .upload(filePath, file, {
           cacheControl: '3600',
@@ -164,11 +166,15 @@ export default function DoctorPending() {
 
 
       // Check if record exists
-      const { data: existing, error: checkError } = await supabase
+      const { data: existing, error: existingLookupError } = await supabase
         .from('provider_applications')
         .select('applicant_user_id')
         .eq('applicant_user_id', user?.user_id)
-        .single();
+        .maybeSingle();
+
+      if (existingLookupError && existingLookupError.code !== 'PGRST116') {
+        console.warn('Lookup existing application failed:', existingLookupError);
+      }
 
       let result;
       if (existing) {

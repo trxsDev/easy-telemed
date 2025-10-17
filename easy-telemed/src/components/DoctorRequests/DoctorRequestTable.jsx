@@ -1,4 +1,4 @@
-import React, { use, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import "./styles.css";
 import { CheckOutlined, CloseOutlined } from "@ant-design/icons";
 import {
@@ -20,7 +20,7 @@ import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 const { Title } = Typography;
 
 function DoctorRequestTable({ requestList, onProcessed }) {
-  const { t,i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [processingId, setProcessingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -29,7 +29,7 @@ function DoctorRequestTable({ requestList, onProcessed }) {
   const { user } = useUserAuthSupabase();
   
   const showModal = async (record) => {
-    setSelectedRecord(record);
+  setSelectedRecord(record);
     
     try {
       const credentials = JSON.parse(record.applicant_documents_form);
@@ -78,32 +78,51 @@ function DoctorRequestTable({ requestList, onProcessed }) {
 
   const updateStatus = async (id, status) => {
     setProcessingId(id);
-    if (status === "approved") {
-      let { error } = await supabase
-        .from("app_users")
-        .update({ role: "doctor", verify: true })
-        .eq("user_id", id);
-      if (error) {
-        message.error("Update failed");
-      } else {
-        message.success(status === "approved" ? "Approved" : "Rejected");
-        onProcessed && onProcessed();
+    try {
+      if (status === "approved") {
+        const { error: approveError } = await supabase
+          .from("app_users")
+          .update({ role: "doctor", verify: true })
+          .eq("user_id", id);
+
+        if (approveError) {
+          throw approveError;
+        }
       }
-      
-        const { error: providerError } = await supabase
+
+      const { error: providerError } = await supabase
         .from("provider_applications")
         .update({
-          status: status,
+          status,
           reviewer_admin_id: user.user_id,
           decided_at: new Date().toISOString(),
         })
-        .eq("applicant_user_id", id)
-        if (providerError) {
-        console.error("Error updating provider application:", providerError);
+        .eq("applicant_user_id", id);
+
+      if (providerError) {
+        throw providerError;
       }
+
+      const { error: requestError } = await supabase
+        .from("doctor_requests")
+        .update({ status })
+        .eq("user_id", id);
+
+      if (requestError) {
+        throw requestError;
+      }
+
+      message.success(
+        status === "approved" ? t("APPROVED", "Approved") : t("REJECTED", "Rejected")
+      );
+      onProcessed?.();
+      setIsBlock(true);
+    } catch (error) {
+      console.error("Error updating doctor request status", error);
+      message.error(t("UPDATE_FAILED", "Update failed"));
+    } finally {
+      setProcessingId(null);
     }
-    onProcessed();
-    setProcessingId(null);
   };
 
   const handleApprove = (id) => {
@@ -139,9 +158,7 @@ function DoctorRequestTable({ requestList, onProcessed }) {
       title: "Specialties",
       key: "specialties",
       render: (_, record) => {
-        console.log("Record for specialties:", record);
         const specialties = record.specialties;
-        console.log("Raw specialties data:", specialties);
         if (!specialties) return "N/A";
         
         try {
@@ -155,20 +172,26 @@ function DoctorRequestTable({ requestList, onProcessed }) {
             return  i18n.language === 'th' ? parsedSpecialties.name_th :  parsedSpecialties.name || "N/A";
           }
           
-          // Handle array format
-          // if (Array.isArray(parsedSpecialties) && parsedSpecialties.length > 0) {
-          //   if (typeof parsedSpecialties[0] === 'object' && parsedSpecialties[0].name) {
-          //     console.log("lngs :", i18n.language);
-          //     return parsedSpecialties.map(spec => i18n.language === 'th' ? spec.name_th :  spec.name).join(", ");
-          //   } else {
-          //     // Fallback for old format (array of IDs)
-          //     const specialtyLabels = parsedSpecialties.map(id => {
-          //       const spec = spacializationData.find(s => s.id === id);
-          //       return spec ? spec.label : null;
-          //     }).filter(Boolean);
-          //     return specialtyLabels.length > 0 ? specialtyLabels.join(", ") : "N/A";
-          //   }
-          // }
+          if (Array.isArray(parsedSpecialties) && parsedSpecialties.length > 0) {
+            if (typeof parsedSpecialties[0] === 'object' && parsedSpecialties[0].name) {
+              return parsedSpecialties
+                .map(spec => (i18n.language === 'th' ? spec.name_th : spec.name) || spec.name)
+                .filter(Boolean)
+                .join(", ");
+            }
+
+            const specialtyLabels = parsedSpecialties
+              .map(id => {
+                const spec = spacializationData.find(s => s.id === id);
+                if (!spec) return null;
+                return i18n.language === 'th' ? spec.name_th || spec.label_th : spec.name || spec.label;
+              })
+              .filter(Boolean);
+
+            if (specialtyLabels.length > 0) {
+              return specialtyLabels.join(", ");
+            }
+          }
         } catch (error) {
           console.error("Error parsing specialties:", error);
         }
@@ -180,7 +203,6 @@ function DoctorRequestTable({ requestList, onProcessed }) {
     {
       title: "Credential",
       render: (_, record) => {
-        console.log("Selected Record:", record);
         return (
         <Button type="primary" onClick={() => showModal(record)}>
           View
@@ -209,6 +231,21 @@ function DoctorRequestTable({ requestList, onProcessed }) {
               {isBlock? "Check first" : "Approve"}
             </Button>
           </Popconfirm>
+          <Popconfirm
+            title="Reject this doctor?"
+            okText="Yes"
+            cancelText="No"
+            onConfirm={() => handleReject(record.applicant_user_id)}
+          >
+            <Button
+              danger
+              icon={<CloseOutlined />}
+              loading={processingId === record.applicant_user_id}
+              size="medium"
+            >
+              {t("REJECT", "Reject")}
+            </Button>
+          </Popconfirm>
         </Space>
       ),
       width: "20%",
@@ -231,7 +268,7 @@ function DoctorRequestTable({ requestList, onProcessed }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <BarChartOutlined />
           <Title level={4} style={{ margin: 0 }}>
-            Doctor Requests
+            {t("DOCTOR_REQUESTS", "Doctor Requests")}
           </Title>
         </div>
       }
@@ -239,9 +276,9 @@ function DoctorRequestTable({ requestList, onProcessed }) {
     >
       <Table
         columns={columns}
-        dataSource={requestList}
+  dataSource={requestList}
         onChange={onChange}
-        rowKey="user_id"
+  rowKey="applicant_user_id"
         pagination={{
           pageSize: 10,
           showSizeChanger: true,
@@ -252,7 +289,7 @@ function DoctorRequestTable({ requestList, onProcessed }) {
         scroll={{ y: 400 }}
       />
       <Modal
-        title="Credential"
+  title={selectedRecord?.applicant_full_name_form ? `${t("CREDENTIAL_FOR", "Credential for")} ${selectedRecord.applicant_full_name_form}` : t("CREDENTIAL", "Credential")}
         closable={{ "aria-label": "Custom Close Button" }}
         open={isModalOpen}
         onOk={handleOk}

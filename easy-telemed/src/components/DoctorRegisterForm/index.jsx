@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Form, Alert, Input, Button, Typography, Space, Card, message } from "antd";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 import { supabase } from "../../api/SupabaseClient";
@@ -37,9 +37,6 @@ function DoctorRegisterForm() {
       // แนะนำให้เพิ่มคอลัมน์ role ถ้ายังไม่มี:
       //   alter table public.app_users add column role text default 'patient';
       // แล้วจึงใช้ upsert ด้านล่างได้
-
-      // สร้าง username เบื้องต้นจาก email (ถ้าตารางมีคอลัมน์นี้)
-      const derivedUsername = email.split('@')[0];
 
       // จาก error ล่าสุด: ไม่มี column "id" ใน app_users -> อาจใช้ชื่อ user_id แทน
       // ปรับมาใช้ user_id หากตารางคุณนิยามแบบนั้น (ตรวจใน SQL Editor): \d app_users

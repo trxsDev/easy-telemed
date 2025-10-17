@@ -1,8 +1,8 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import { Form, InputNumber, Row, Col, Card, Alert, Statistic } from 'antd'
 import { useTranslation } from 'react-i18next'
 
-function PhysicalInformationStep({ formData, setFormData, form }) {
+function PhysicalInformationStep({ formData, setFormData, form: _form }) {
   const { t } = useTranslation()
 
   const handleFieldChange = (field, value) => {

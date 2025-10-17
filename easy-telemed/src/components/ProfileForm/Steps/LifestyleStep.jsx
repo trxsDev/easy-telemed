@@ -13,7 +13,7 @@ import {
 const { Option } = Select
 const { TextArea } = Input
 
-function LifestyleStep({ formData, setFormData, form }) {
+function LifestyleStep({ formData, setFormData, form: _form }) {
   const { t } = useTranslation()
 
   const handleChange = (field, value) => {

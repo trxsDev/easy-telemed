@@ -24,7 +24,6 @@ import {
   HeartOutlined,
   MedicineBoxOutlined
 } from '@ant-design/icons'
-import { useTranslation } from 'react-i18next'
 import dayjs from 'dayjs'
 
 const { Option } = Select
@@ -32,7 +31,6 @@ const { TextArea } = Input
 const { Title, Text } = Typography
 
 function PatientProfileForm({ initialData = {}, onSubmit, loading = false, mode = 'create' }) {
-  const { t } = useTranslation()
   const [form] = Form.useForm()
   const [bmi, setBmi] = useState(null)
 

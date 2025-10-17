@@ -1,17 +1,13 @@
-import React, { useState, useEffect } from "react";
-import { Table } from "antd";
-import { Button, Space, Popconfirm, Modal, Card, Image } from "antd";
-import { User } from "lucide-react";
+import React, { useState } from "react";
+import { Table, Button, Modal, Card, Image } from "antd";
 import { CheckOutlined, CloseOutlined } from "@ant-design/icons";
 import { supabase } from "../../api/SupabaseClient";
 import { useTranslation } from "react-i18next";
-import PieDonut from "../Chart/PieDonut";
 
-function DoctorTable({ userData , t }) {
+function DoctorTable({ userData }) {
+  const { t } = useTranslation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [credentialsDoc, setCredentialsDoc] = useState(null);
-  const [doctorData, setDoctorData] = useState([]);
-  const [specialtiesCountSet, setSpecialtiesCountSet] = useState({});
   
 
   const columns = [
@@ -68,10 +64,14 @@ function DoctorTable({ userData , t }) {
   };
 
   const showModal = async (credential) => {
+    if (!credential) {
+      return;
+    }
+
     const credentials = JSON.parse(credential);
     const credPath = credentials[0];
 
-      try {
+    try {
       const { data: fileData, error: downloadError } = await supabase.storage
         .from("credentials")
         .download(credPath);

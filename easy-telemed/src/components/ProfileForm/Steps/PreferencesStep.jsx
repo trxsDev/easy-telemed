@@ -24,7 +24,7 @@ const { Option } = Select
 const { TextArea } = Input
 const { Text, Title } = Typography
 
-function PreferencesStep({ formData, setFormData, form }) {
+function PreferencesStep({ formData, setFormData, form: _form }) {
   const { t } = useTranslation()
 
   const handleChange = (field, value) => {

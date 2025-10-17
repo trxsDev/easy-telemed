@@ -8,19 +8,83 @@ import {
   Users,
   FileVideoCamera,
   PersonStanding,
-  CircleUserRound
+  CircleUserRound,
+  CalendarClock
  } from "lucide-react";
 import { Divider } from "antd";
 import { useUserAuthSupabase } from "../context/UserAuthContextSupabase";
 import medcross from "../assets/medcross.svg";
-import { ExclamationCircleFilled } from "@ant-design/icons";
-import { Button, Modal, Popconfirm } from "antd";
+import { Popconfirm } from "antd";
 import ChangeLangButton from "./ChangeLangButton";
-const { confirm } = Modal;
+import React from "react";
+import { supabase } from "../api/SupabaseClient";
+import { useSocket } from "../context/SocketContext.jsx";
 
 export default function Sidebar() {
   const navigate = useNavigate();
-  const { logOut, role, verify } = useUserAuthSupabase();
+  const { logOut, role, verify, authUser } = useUserAuthSupabase();
+  const { socket } = useSocket();
+  const [patientTelemedEnabled, setPatientTelemedEnabled] = React.useState(false);
+
+  // Determine if Telemed Room should be visible for patients
+  React.useEffect(() => {
+    let mounted = true;
+    const initFromLocal = () => {
+      if (role !== 'patient' || !authUser?.user_id) {
+        if (mounted) setPatientTelemedEnabled(false);
+        return;
+      }
+      const invited = (() => { try { return localStorage.getItem('patientInvitedConsultationId'); } catch { return null; } })();
+      const active = (() => { try { return localStorage.getItem('activeConsultationId'); } catch { return null; } })();
+      if (mounted) setPatientTelemedEnabled(Boolean(invited || active));
+    };
+    initFromLocal();
+
+    // React to localStorage changes (e.g., connect/disconnect)
+    const onStorage = (e) => {
+      if (e.key === 'activeConsultationId') {
+        const has = !!e.newValue;
+        setPatientTelemedEnabled(has);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+
+    // Listen to socket events to toggle button in realtime
+    if (socket) {
+      const onDoctorReady = (payload) => {
+        if (payload?.consultation?.patient_id === authUser?.user_id) {
+          try { localStorage.setItem('patientInvitedConsultationId', payload.consultation?.consultation_id || ''); } catch {}
+          setPatientTelemedEnabled(true);
+        }
+      };
+      const onSummarizing = (payload) => {
+        if (payload?.patientId === authUser?.user_id || payload?.consultation?.patient_id === authUser?.user_id) {
+          setPatientTelemedEnabled(false); // hide after call finished/summarizing
+          try { localStorage.removeItem('activeConsultationId'); } catch {}
+          try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
+        }
+      };
+      const onEnded = (payload) => {
+        if (payload?.patientId === authUser?.user_id || payload?.consultation?.patient_id === authUser?.user_id) {
+          setPatientTelemedEnabled(false);
+          try { localStorage.removeItem('activeConsultationId'); } catch {}
+          try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
+        }
+      };
+      socket.on?.('doctor:ready', onDoctorReady);
+      socket.on?.('consultation:summarizing', onSummarizing);
+      socket.on?.('consultation:ended', onEnded);
+      return () => {
+        mounted = false;
+        socket.off?.('doctor:ready', onDoctorReady);
+        socket.off?.('consultation:summarizing', onSummarizing);
+        socket.off?.('consultation:ended', onEnded);
+        window.removeEventListener('storage', onStorage);
+      };
+    }
+
+    return () => { mounted = false; window.removeEventListener('storage', onStorage); };
+  }, [socket, role, authUser?.user_id]);
 
   const handleSignOut = async () => {
     try {
@@ -50,6 +114,7 @@ export default function Sidebar() {
       icon: <FileVideoCamera size={24} />,
       label: "Telemed Room",
       roles: ["admin", "doctor", "patient"],
+      patientGuard: true,
     },
     {
       to: "/easy-telemed/register",
@@ -77,6 +142,12 @@ export default function Sidebar() {
       roles: ["patient"],
       requireUnverified: true,
     },
+    {
+      to: "/easy-telemed/doctor/schedule",
+      icon: <CalendarClock size={24} />,
+      label: "Doctor Schedule",
+      roles: ["doctor"],
+    },
   ];
 
   // Filter menus based on role and verify status
@@ -101,28 +172,18 @@ export default function Sidebar() {
       return !item.requireUnverified;
     }
     
-    // For verified patients, exclude profile requirement page
+    // For verified patients, exclude profile requirement page and guard Telemed visibility
     if (role === "patient" && verify === true) {
-      return !item.requireUnverified;
+      if (item.requireUnverified) return false;
+      if (item.patientGuard) {
+        return patientTelemedEnabled;
+      }
+      return true;
     }
 
     // For other roles, exclude unverified-only pages
     return !item.requireUnverified;
   });
-
-  const showDeleteConfirm = () => {
-    confirm({
-      title: "Are you sure delete this task?",
-      icon: <ExclamationCircleFilled />,
-      content: "Some descriptions",
-      okText: "Yes",
-      okType: "danger",
-      cancelText: "No",
-      onOk() {
-        handleSignOut();
-      },
-    });
-  };
 
   return (
     <aside className="sidebar">

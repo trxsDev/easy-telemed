@@ -1,5 +1,15 @@
 import React , {createContext,useContext,useEffect,useState, useCallback} from 'react'
-import { supabase } from '../api/SupabaseClient'
+// Proxy auth via backend API
+const API_BASE = import.meta?.env?.VITE_BACKEND_URL || 'http://localhost:3001';
+const fetchJson = async (url, options = {}) => {
+  const resp = await fetch(url, { credentials: 'include', ...options });
+  if (!resp.ok) {
+    let msg = `HTTP ${resp.status}`;
+    try { const e = await resp.json(); msg = e.error || msg; } catch {}
+    throw new Error(msg);
+  }
+  return resp.json();
+};
 
 
 const UserAuthContextSupabase = createContext();
@@ -9,19 +19,29 @@ export function UserAuthContextSupabaseProvider({children}) {
   const [session, setSession] = useState(null);
   const [authUser, setAuthUser] = useState(null); // raw auth user
   const [loading, setLoading] = useState(true);
+  const [hydrated, setHydrated] = useState(false); // ensure we don't flip loading=false before /me returns
   const [errorContext, setErrorContext] = useState({});
 
-    const signIn = (email,password) =>{
-        return supabase.auth.signInWithPassword({ email, password });
-    }
+  const signIn = async (email,password) =>{
+  const data = await fetchJson(`${API_BASE}/api/auth/signin`,{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email,password})});
+    // Minimal session handling on client: store user id; for protected routes, rely on backend checks or pass token later if needed
+    setSession(data.session || null);
+    setAuthUser(data.user || null);
+    return data;
+  }
 
-    const signUp = (email,password) => {
-        return supabase.auth.signUp({email,password});
-    }
+  const signUp = async (email,password) => {
+  const data = await fetchJson(`${API_BASE}/api/auth/signup`,{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email,password})});
+    setSession(data.session || null);
+    setAuthUser(data.user || null);
+    return data;
+  }
 
-    const logOut = () => {
-        return supabase.auth.signOut();
-    }
+  const logOut = async () => {
+    await fetchJson(`${API_BASE}/api/auth/signout`,{ method:'POST' });
+    setSession(null);
+    setAuthUser(null);
+  }
 
     
 
@@ -36,16 +56,22 @@ export function UserAuthContextSupabaseProvider({children}) {
     //     }
     // },[])
     useEffect(()=>{
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        setSession(session)
-        setAuthUser(session?.user || null)
-      })
-
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setSession(session)
-        setAuthUser(session?.user || null)
-      })
-      return () => subscription.unsubscribe()
+      // Hydrate from backend cookie JWT
+      (async () => {
+        try {
+          const data = await fetchJson(`${API_BASE}/api/auth/me`);
+          if (data?.user) {
+            setSession({});
+            setAuthUser({ id: data.user.user_id, email: data.user.email });
+          } else {
+            setSession(null); setAuthUser(null);
+          }
+        } catch {
+          setSession(null); setAuthUser(null);
+        } finally {
+          setHydrated(true);
+        }
+      })();
     },[])
 
     // const fetchAppUser = useCallback( async (uid) => {
@@ -105,59 +131,33 @@ export function UserAuthContextSupabaseProvider({children}) {
 
     // รันขนาน เพื่อลด latency
     const [appUsersRes, authRes] = await Promise.all([
-      supabase
-        .from('app_users')
-        .select('*')
-        .eq('user_id', uid)
-        .maybeSingle(),                    // ✅ ไม่เจอแถวก็ไม่ error
-      supabase.auth.getUser(),            // ✅ ดึง email/last_sign_in_at ของ "ตัวเอง"
+      fetchJson(`${API_BASE}/api/users/${uid}`),
     ]);
-
-    if (appUsersRes.error) throw appUsersRes.error;
-    if (authRes.error) throw authRes.error;
-
-    const appUser = appUsersRes.data;
-    const authUser = authRes.data?.user;
-
-    if (appUser) {
-      const authDetail = authUser && authUser.id === uid
-        ? {
-            email: authUser.email ?? null,
-            email_confirmed_at: authUser.email_confirmed_at ?? null,
-            last_sign_in_at: authUser.last_sign_in_at ?? null,
-          }
-        : {}; // ถ้า uid ที่ขอมิใช่ตัวเอง จะไม่ได้ข้อมูลจาก getUser()
-
-      setUser({
-        ...appUser,
-        ...authDetail,
-        role: appUser.role || 'patient',
-      });
-    } else {
-      setUser(null);
-    }
+    const userPayload = appUsersRes?.user || null;
+    setUser(userPayload ? { ...userPayload, role: userPayload.role || 'patient' } : null);
   } catch (e) {
     console.error('fetchAppUser error', e);
     setUser(null);
   } finally {
     setLoading(false);
   }
-}, [supabase, setUser, setLoading]);
+}, [setLoading, setUser]);
 
 
     useEffect(()=>{
+      if (!hydrated) return; // wait until /me completed
       if (authUser?.id) {
         setLoading(true);
         fetchAppUser(authUser.id)
       } else {
         setUser(null); setLoading(false);
       }
-    },[authUser, fetchAppUser]);
+    },[authUser, hydrated, fetchAppUser]);
 
 
   return (
     <UserAuthContextSupabase.Provider value={{
-      user, // app user row (may contain role)
+  user, // app user row (may contain role)
       authUser, // raw auth user
       role: user?.role || 'guest',
       loadingUser: loading,

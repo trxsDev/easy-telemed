@@ -5,7 +5,6 @@ import { supabase } from "../../api/SupabaseClient";
 
 function RegisterForm({ options }) {
   const [api, contextHolder] = notification.useNotification();
-  const [error, setError] = useState("");
   const { signUp } = useUserAuthSupabase();
   const [loading, setLoading] = useState(false);
   const openNotificationWithIcon = (type, message, title = null) => {
@@ -17,7 +16,6 @@ function RegisterForm({ options }) {
   };
 
   const handleSubmit = async (values) => {
-    setError("");
     const { email, password, role } = values;
     setLoading(true);
     try {
@@ -39,7 +37,6 @@ function RegisterForm({ options }) {
         "Account created successfully! Please check your email to verify your account."
       );
     } catch (err) {
-      setError(err.message);
       openNotificationWithIcon('error', err.message);
     } finally {
       setLoading(false);
@@ -92,7 +89,7 @@ function RegisterForm({ options }) {
           </Col>
           <Col span={24}>
             <Form.Item shouldUpdate style={{ marginBottom: 0 }}>
-              <Button type="primary" htmlType="submit" block>
+              <Button type="primary" htmlType="submit" block loading={loading} disabled={loading}>
                 Create User
               </Button>
             </Form.Item>

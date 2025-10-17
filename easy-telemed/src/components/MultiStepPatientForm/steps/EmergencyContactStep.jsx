@@ -13,7 +13,7 @@ import { PhoneOutlined } from '@ant-design/icons'
 const { Option } = Select
 const { Title } = Typography
 
-function EmergencyContactStep({ form }) {
+function EmergencyContactStep({ form: _form }) {
   return (
     <>
       <Card size="small" style={{ marginBottom: '24px', border: 'none', boxShadow: 'none' }}>

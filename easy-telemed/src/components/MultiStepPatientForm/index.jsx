@@ -334,7 +334,7 @@ function MultiStepPatientForm({ initialData = {}, onSubmit, loading = false, mod
         <Steps 
           current={currentStep} 
           size="small"
-          items={steps.map((step, idx) => ({
+          items={steps.map((step, _idx) => ({
             // title: step.title,
             icon: step.icon,
             // description: step.description

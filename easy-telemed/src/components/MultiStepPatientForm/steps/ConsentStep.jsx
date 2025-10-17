@@ -12,7 +12,7 @@ import { SafetyCertificateOutlined, InfoCircleOutlined } from '@ant-design/icons
 
 const { Title, Text, Paragraph } = Typography
 
-function ConsentStep({ form }) {
+function ConsentStep({ form: _form }) {
   return (
     <>
       <Card size="small" style={{ marginBottom: '24px', border: 'none', boxShadow: 'none' }}>

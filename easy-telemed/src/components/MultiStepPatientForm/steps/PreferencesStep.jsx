@@ -15,7 +15,7 @@ const { TextArea } = Input
 const { Option } = Select
 const { Title, Text } = Typography
 
-function PreferencesStep({ form }) {
+function PreferencesStep({ form: _form }) {
   return (
     <>
       <Card size="small" style={{ marginBottom: '24px', border: 'none', boxShadow: 'none' }}>

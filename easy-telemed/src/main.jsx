@@ -19,6 +19,14 @@ import Profile from "./container/Profile";
 import PendingEmail from "./container/PendingEmail";
 import ProtectedRoute from "./auth/ProtectedRoute.jsx";
 import "./i18n"; // import i18n (needs to be bundled)
+import { SocketProvider } from "./context/SocketContext.jsx";
+import PatientMatch from "./container/PatientMatch";
+import PatientWait from "./container/PatientWait";
+import DoctorQueue from "./container/DoctorQueue";
+import DoctorConsult from "./container/DoctorConsult";
+import DoctorSchedule from "./container/DoctorSchedule";
+import { Provider } from "react-redux";
+import { store } from "./store";
 
 const router = createBrowserRouter([
   // กลุ่มที่ไม่ต้องล็อกอิน
@@ -92,10 +100,54 @@ const router = createBrowserRouter([
         ),
       },
       {
+        path: "matching/:caseId",
+        element: (
+          <ProtectedRoute allowed={["patient"]} requireVerified>
+            <PatientMatch />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "matching/:caseId/wait",
+        element: (
+          <ProtectedRoute allowed={["patient"]} requireVerified>
+            <PatientWait />
+          </ProtectedRoute>
+        ),
+      },
+      {
         path: "profile",
         element: (
           <ProtectedRoute allowed={["patient", "doctor"]}>
             <Profile />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "doctor/queue",
+        element: (
+          <ProtectedRoute allowed={["doctor"]}>
+            <DoctorQueue />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "doctor/consult/:consultationId",
+        element: (
+          <ProtectedRoute allowed={["doctor"]}>
+            <DoctorConsult />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "doctor/schedule",
+        element: (
+          <ProtectedRoute
+            allowed={["doctor"]}
+            requireVerified
+            pendingRedirect="/easy-telemed/onboarding/doctor"
+          >
+            <DoctorSchedule />
           </ProtectedRoute>
         ),
       },
@@ -105,8 +157,12 @@ const router = createBrowserRouter([
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <UserAuthContextSupabaseProvider>
-      <RouterProvider router={router} />
-    </UserAuthContextSupabaseProvider>
+    <Provider store={store}>
+      <UserAuthContextSupabaseProvider>
+        <SocketProvider>
+          <RouterProvider router={router} />
+        </SocketProvider>
+      </UserAuthContextSupabaseProvider>
+    </Provider>
   </StrictMode>
 );

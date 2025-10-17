@@ -14,10 +14,10 @@ function SignInForm() {
   const { signIn } = useUserAuthSupabase();
 
   let navigate = useNavigate();
-  const handeSubmit = async (e) => {
+  const handeSubmit = async () => {
     setError("");
     try {
-      const { data, error } = await signIn(email, password);
+      const { error } = await signIn(email, password);
       
       // Check if error exists and contains email confirmation issue
       if (error) {

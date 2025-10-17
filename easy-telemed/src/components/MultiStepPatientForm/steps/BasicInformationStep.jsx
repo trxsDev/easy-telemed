@@ -17,7 +17,7 @@ import {
 const { Option } = Select
 const { Title } = Typography
 
-function BasicInformationStep({ form }) {
+function BasicInformationStep({ form: _form }) {
   return (
     <>
       <Card size="small" style={{ marginBottom: '24px', border: 'none', boxShadow: 'none' }}>

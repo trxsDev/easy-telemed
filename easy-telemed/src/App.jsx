@@ -12,7 +12,10 @@ export default function App() {
     <>
       <TopBar />
       <div className="app-content">
-    
+        <section className="hero">
+          <h1>{t("app.title", "แพลตฟอร์มเทเลเมดิซีน")}</h1>
+          <p>{t("app.subtitle", "เข้าสู่ระบบเพื่อเริ่มต้นการปรึกษาแพทย์ออนไลน์ของคุณ")}</p>
+        </section>
       </div>
     </>
   );

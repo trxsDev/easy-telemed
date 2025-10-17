@@ -12,5 +12,6 @@
     "CREDENTIAL": "Credential",
     "VERIFIED": "Verified",
     "WELCOME": "Welcome",
-    "GREETING": "How are you today?"
+    "GREETING": "How are you today?",
+    "SIGNIN_GREETING": "Welcome back!"
 }

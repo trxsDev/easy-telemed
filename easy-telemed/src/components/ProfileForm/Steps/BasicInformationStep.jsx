@@ -10,7 +10,7 @@ import {
 
 const { Option } = Select
 
-function BasicInformationStep({ formData, setFormData, form }) {
+function BasicInformationStep({ formData, setFormData, form: _form }) {
   const { t } = useTranslation()
 
   const handleFieldChange = (field, value) => {

@@ -28,7 +28,7 @@ import {
 const { Option } = Select
 const { TextArea } = Input
 
-function MedicalHistoryStep({ formData, setFormData, form }) {
+function MedicalHistoryStep({ formData, setFormData, form: _form }) {
   const { t } = useTranslation()
   const [modalVisible, setModalVisible] = useState({
     allergy: false,

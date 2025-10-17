@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Select } from "antd";
 
 function ChangeLangButtonSide() {
-  const { t, i18n } = useTranslation();
+  const { i18n } = useTranslation();
   const lngs = {
     en: { nativeName: "English", icon: "/icon/en-icon.svg" },
     th: { nativeName: "ไทย", icon: "/icon/th-icon.png" },

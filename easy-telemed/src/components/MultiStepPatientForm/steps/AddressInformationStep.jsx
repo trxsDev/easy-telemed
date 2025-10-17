@@ -11,7 +11,7 @@ import { HomeOutlined } from '@ant-design/icons'
 
 const { Title } = Typography
 
-function AddressInformationStep({ form }) {
+function AddressInformationStep({ form: _form }) {
   return (
     <>
       <Card size="small" style={{ marginBottom: '24px', border: 'none', boxShadow: 'none' }}>

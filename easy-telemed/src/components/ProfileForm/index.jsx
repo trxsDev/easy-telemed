@@ -25,7 +25,6 @@ function ProfileForm({ userType = 'patient', initialData = {}, onSubmit, onSave,
   const [currentStep, setCurrentStep] = useState(0)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [completed, setCompleted] = useState(false)
 
   // Step configuration with components
   const steps = [
@@ -127,15 +126,12 @@ function ProfileForm({ userType = 'patient', initialData = {}, onSubmit, onSave,
       console.log('Form fields validated', formData)
       
       // Validate all steps using new validation function
+
       const allStepsValid = steps.every(step => validateStep(step.key, formData))
-      
-      console.log("track 1")
-    //   if (!allStepsValid) {
-    //     message.error(t('PLEASE_COMPLETE_ALL_STEPS', 'Please complete all required information'))
-    //     setLoading(false)
-    //     return
-    //   }
-      console.log("track 2")
+      if (!allStepsValid) {
+        message.error(t('PLEASE_COMPLETE_ALL_STEPS', 'Please complete all required information'))
+        return
+      }
 
       console.log('onSubmit 1', onSubmit)
 
@@ -149,8 +145,7 @@ function ProfileForm({ userType = 'patient', initialData = {}, onSubmit, onSave,
       console.log('onSubmit', onSubmit)
       
       if (onSubmit) {
-        await onSubmit(submissionData)
-        setCompleted(true)
+  await onSubmit(submissionData)
         message.success(t('PROFILE_SAVED', 'Profile saved successfully'))
       }
     } catch (error) {
@@ -215,7 +210,7 @@ function ProfileForm({ userType = 'patient', initialData = {}, onSubmit, onSave,
         <Form
           form={form}
           layout="vertical"
-          onValuesChange={(changedValues, allValues) => {
+          onValuesChange={(changedValues, _allValues) => {
             // Update form data when form values change
             setFormData(prev => ({ ...prev, ...changedValues }))
           }}

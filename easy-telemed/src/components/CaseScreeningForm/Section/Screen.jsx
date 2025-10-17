@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 const { TextArea } = Input
 
-function Screen({ formData, setFormData, onNext, onPrev }) {
+function Screen({ formData, setFormData, onNext }) {
   const { t } = useTranslation()
   const [form] = Form.useForm()
 

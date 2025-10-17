@@ -88,13 +88,6 @@ function resolveModelUrl(defaultFile = "HumanBody.obj") {
     import.meta.env.BASE_URL;
   if (viteBase) return viteBase.replace(/\/?$/, "/") + defaultFile;
 
-  // CRA
-  const craBase =
-    typeof process !== "undefined" &&
-    process.env &&
-    process.env.PUBLIC_URL;
-  if (craBase) return craBase.replace(/\/?$/, "/") + defaultFile;
-
   // Fallback root
   return "/" + defaultFile;
 }

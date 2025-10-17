@@ -272,7 +272,7 @@ function ProfileForm({ userType = 'patient', initialData = {}, onSubmit, onSave,
         <Form
           form={form}
           layout="vertical"
-          onValuesChange={(changedValues, allValues) => {
+          onValuesChange={(changedValues, _allValues) => {
             // Update form data when form values change
             setFormData(prev => ({ ...prev, ...changedValues }))
           }}

@@ -1,14 +1,130 @@
-import React, { useState, useMemo, useCallback } from "react";
-import { Steps, Button, Card, message, Upload, Image } from "antd";
-import { LeftOutlined, RightOutlined, InboxOutlined, DeleteOutlined } from "@ant-design/icons";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { Steps, Button, Card, message, Upload, Tag } from "antd";
+import { LeftOutlined, RightOutlined, InboxOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import Base from "./Section/Base";
 import Screen from "./Section/Screen";
 import HumanBody from "../3D/HumanBody";
 import { Input } from "antd";
-import { supabase } from "../../api/SupabaseClient";
+// Supabase calls have been moved to backend APIs
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
+import { useNavigate } from "react-router-dom";
+import specializations from "../../specialization.json";
+import { useDispatch, useSelector } from "react-redux";
+import { loadSpecialtyAvailability } from "../../store/availabilitySlice";
+import { selectAvailability, selectCases } from "../../store";
+import { submitPatientCase } from "../../store/casesSlice";
+import { fetchMatchingStatusByCase } from "../../services/matchingService";
 const { Dragger } = Upload;
+
+// Step 0: เลือกแผนกที่ต้องการพบ
+const SpecialtyStep = React.memo(
+  ({
+    specialtyList,
+    selectedSpecialtyId,
+    onSelect,
+    specialtyAvailability,
+    loading,
+    t,
+  }) => {
+    const totalActiveDoctors = useMemo(() => {
+      return Object.values(specialtyAvailability || {}).reduce(
+        (sum, value) => sum + (value?.activeCount || 0),
+        0
+      );
+    }, [specialtyAvailability]);
+
+    return (
+      <div style={{ padding: 20 }}>
+        <h3 style={{ marginBottom: 16 }}>{t("SELECT_SPECIALTY", "เลือกแผนกที่ต้องการพบ")}</h3>
+        <p style={{ color: "#666", marginBottom: 24 }}>
+          {t(
+            "SPECIALTY_HINT",
+            "ระบบจะแนะนำเฉพาะแผนกที่มีแพทย์ออนไลน์อยู่ในขณะนี้"
+          )}
+        </p>
+
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "48px 0" }}>
+            <span>{t("LOADING_SPECIALTIES", "กำลังตรวจสอบแพทย์ที่ออนไลน์...")}</span>
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: 16,
+            }}
+          >
+            {specialtyList.map((spec) => {
+              const availability = specialtyAvailability?.[spec.id];
+              const activeCount = availability?.activeCount || 0;
+              const isSelected = selectedSpecialtyId === spec.id;
+              const hasActiveDoctor = activeCount > 0;
+
+              return (
+                <button
+                  key={spec.id}
+                  type="button"
+                  onClick={() => hasActiveDoctor && onSelect(spec.id)}
+                  disabled={!hasActiveDoctor}
+                  style={{
+                    padding: "16px 20px",
+                    borderRadius: 12,
+                    textAlign: "left",
+                    border: `2px solid ${
+                      isSelected ? "#1890ff" : hasActiveDoctor ? "#d9d9d9" : "#f0f0f0"
+                    }`,
+                    backgroundColor: isSelected
+                      ? "rgba(24, 144, 255, 0.12)"
+                      : hasActiveDoctor
+                      ? "#fff"
+                      : "#fafafa",
+                    boxShadow: isSelected
+                      ? "0 4px 10px rgba(24, 144, 255, 0.2)"
+                      : "0 2px 6px rgba(0,0,0,0.05)",
+                    cursor: hasActiveDoctor ? "pointer" : "not-allowed",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  <div style={{ fontSize: 18, fontWeight: 600 }}>
+                    {spec.name_th || spec.name}
+                  </div>
+                  <div style={{ fontSize: 13, color: "#888", marginTop: 4 }}>
+                    {spec.name}
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <Tag color={hasActiveDoctor ? "green" : "default"}>
+                      {hasActiveDoctor
+                        ? t("ACTIVE_DOCTORS_COUNT", {
+                            defaultValue: "มีแพทย์ออนไลน์ {{count}} คน",
+                            count: activeCount,
+                          })
+                        : t("NO_ACTIVE_DOCTOR", "ยังไม่มีแพทย์ออนไลน์")}
+                    </Tag>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div
+          style={{
+            marginTop: 24,
+            padding: "12px 16px",
+            backgroundColor: "#f6ffed",
+            border: "1px solid #b7eb8f",
+            borderRadius: 8,
+            color: "#389e0d",
+          }}
+        >
+          {t("TOTAL_ACTIVE_DOCTORS", "แพทย์ที่ออนไลน์ทั้งหมด")}: {totalActiveDoctors}
+        </div>
+      </div>
+    );
+  }
+);
 
 // แยก component ออกมาและใช้ React.memo เพื่อป้องกัน re-render
 const SymptomsStep = React.memo(
@@ -289,8 +405,15 @@ const SeverityStep = React.memo(
 function CaseScreeningForm() {
   const { t } = useTranslation();
   const { user } = useUserAuthSupabase();
+  const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const availability = useSelector(selectAvailability);
+  const casesState = useSelector(selectCases);
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedSpecialtyId, setSelectedSpecialtyId] = useState(null);
+  const specialtyAvailability = availability.stats || {};
+  const loadingSpecialty = availability.loading;
 
   // แยก state เพื่อลด re-render
   const [symptomsText, setSymptomsText] = useState("");
@@ -298,9 +421,86 @@ function CaseScreeningForm() {
   const [painLevel, setPainLevel] = useState(null);
   const [duration, setDuration] = useState("");
   const [additionalInfo, setAdditionalInfo] = useState("");
-  const [attachments, setAttachments] = useState([]);
   const [selectedBodyParts, setSelectedBodyParts] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState([]); // เก็บไฟล์ที่เลือกไว้ก่อนอัพโหลด
+
+  // Redirect guard: if there is an active case already in progress, send user to latest step
+  useEffect(() => {
+    const enforceSingleActiveCase = async () => {
+      let activeCaseId;
+      try { activeCaseId = localStorage.getItem('activeCaseId'); } catch {}
+      if (!activeCaseId) return;
+      try {
+        const { case: caseRow, matchRequest, consultation } = await fetchMatchingStatusByCase(activeCaseId);
+        // Redirect only if this case belongs to current user AND it has an active request/consultation
+        const belongs = !!caseRow && caseRow.patient_id && user?.user_id && caseRow.patient_id === user.user_id;
+        if (belongs && (consultation || matchRequest)) {
+          navigate(`/easy-telemed/matching/${activeCaseId}/wait`, { replace: true });
+        } else {
+          // Clear stale active case reference to prevent redirect loops
+          try { localStorage.removeItem('activeCaseId'); } catch {}
+        }
+      } catch {
+        // If status fetch fails, clear to be safe
+        try { localStorage.removeItem('activeCaseId'); } catch {}
+      }
+    };
+    enforceSingleActiveCase();
+  }, [navigate, user?.user_id]);
+
+  const loadAvailability = useCallback(async () => {
+    try {
+      await dispatch(loadSpecialtyAvailability()).unwrap();
+    } catch (error) {
+      console.error("Error fetching specialty availability", error);
+      message.error(
+        t(
+          "FAILED_FETCH_SPECIALTY",
+          "ไม่สามารถโหลดข้อมูลแผนกและแพทย์ที่พร้อมให้บริการได้"
+        )
+      );
+    }
+  }, [dispatch, t]);
+
+  useEffect(() => {
+    loadAvailability();
+  }, [loadAvailability]);
+
+  // Subscribe to realtime changes in doctor_status to keep availability fresh
+  // Polling fallback for availability refresh (since direct Supabase realtime was removed from frontend)
+  useEffect(() => {
+    // const id = setInterval(() => {
+    //   loadAvailability();
+    // },
+    //  10_000
+    // ); // every 10s
+    // return () => clearInterval(id);
+    loadAvailability();
+  }, [loadAvailability]);
+
+  useEffect(() => {
+    if (selectedSpecialtyId) return;
+    if (!specialtyAvailability || Object.keys(specialtyAvailability).length === 0) return;
+
+    const firstAvailable = specializations.find((spec) => {
+      const bucket = specialtyAvailability?.[spec.id];
+      return (bucket?.activeCount || 0) > 0;
+    });
+
+    if (firstAvailable) {
+      setSelectedSpecialtyId(firstAvailable.id);
+    }
+  }, [specialtyAvailability, selectedSpecialtyId]);
+
+  const selectedSpecialty = useMemo(() => {
+    return specializations.find((spec) => spec.id === selectedSpecialtyId) || null;
+  }, [selectedSpecialtyId]);
+
+  const selectedSpecialtyDoctors = useMemo(() => {
+    if (!selectedSpecialty) return [];
+    const bucket = specialtyAvailability?.[selectedSpecialty.id];
+    return bucket?.doctors || [];
+  }, [selectedSpecialty, specialtyAvailability]);
 
   // ใช้ useCallback เพื่อป้องกัน re-create functions
   const setSymptomsTextCallback = useCallback(
@@ -312,77 +512,7 @@ function CaseScreeningForm() {
     []
   );
 
-  // ฟังก์ชันอัพโหลดไฟล์ไปยัง Supabase Storage
-  const uploadFilesToSupabase = async (files) => {
-    if (!user?.user_id) {
-      throw new Error("กรุณาเข้าสู่ระบบก่อนอัพโหลดไฟล์");
-    }
-
-    console.log("Starting upload for user:", user.user_id);
-    console.log("Files to upload:", files.length);
-
-    const uploadPromises = files.map(async (fileObj, index) => {
-      const file = fileObj.originFileObj || fileObj;
-      
-      try {
-        console.log(`Uploading file ${index + 1}:`, file.name);
-        
-        // สร้างชื่อไฟล์ที่ไม่ซ้ำ
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-        const filePath = `${user.user_id}/${fileName}`; // ลบ "attachments/" ออกเพราะเป็นชื่อ bucket แล้ว
-
-        console.log("Upload path:", filePath);
-
-        // อัพโหลดไฟล์ไปยัง Supabase Storage
-        const { data, error } = await supabase.storage
-          .from('attachments')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false
-          });
-
-        if (error) {
-          console.error('Upload error for file:', file.name, error);
-          
-          // ตรวจสอบประเภท error ต่างๆ
-          if (error.message.includes('Bucket not found')) {
-            throw new Error(`Storage bucket 'attachments' ไม่พบ กรุณาสร้าง bucket ใน Supabase Dashboard`);
-          } else if (error.message.includes('Policy')) {
-            throw new Error(`ไม่มีสิทธิ์อัพโหลดไฟล์ กรุณาตั้งค่า Storage Policies ใน Supabase`);
-          } else if (error.message.includes('violates row-level security')) {
-            throw new Error(`ปัญหา Row Level Security กรุณาตั้งค่า Storage Policies ให้ถูกต้อง`);
-          } else {
-            throw new Error(`ไม่สามารถอัพโหลดไฟล์ ${file.name}: ${error.message}`);
-          }
-        }
-
-        console.log('Upload success:', data);
-
-        // ดึง public URL
-        const { data: urlData } = supabase.storage
-          .from('attachments')
-          .getPublicUrl(filePath);
-
-        console.log('Public URL:', urlData.publicUrl);
-
-        return {
-          path: filePath,
-          url: urlData.publicUrl,
-          name: file.name,
-          size: file.size,
-          type: file.type
-        };
-      } catch (error) {
-        console.error(`Error uploading file ${file.name}:`, error);
-        throw error;
-      }
-    });
-
-    const results = await Promise.all(uploadPromises);
-    console.log('All uploads completed:', results);
-    return results;
-  };
+  // การอัพโหลดไฟล์ถูกย้ายไป backend flow ภายใต้ casesSlice (ส่ง metadata ชั่วคราว)
 
   // รวม formData เฉพาะเมื่อจำเป็น (สำหรับ ReviewStep และ Submit)
   const formData = useMemo(
@@ -392,9 +522,10 @@ function CaseScreeningForm() {
       painLevel,
       duration,
       additional_info: additionalInfo,
-      attachments,
       painAreas: selectedBodyParts,
       selectedFiles,
+      requested_specialty: selectedSpecialty,
+      available_doctors: selectedSpecialtyDoctors,
       triage_level: "standard",
       status: "open",
     }),
@@ -404,14 +535,19 @@ function CaseScreeningForm() {
       painLevel,
       duration,
       additionalInfo,
-      attachments,
       selectedBodyParts,
       selectedFiles,
+      selectedSpecialty,
+      selectedSpecialtyDoctors,
     ]
   );
 
   const steps = useMemo(
     () => [
+      {
+        title: t("SPECIALTY", "Specialty"),
+        description: t("SPECIALTY_DESC", "เลือกแผนกที่ต้องการพบ"),
+      },
       {
         title: t("SYMPTOMS", "Symptoms"),
         description: t("SYMPTOMS_DESC", "Describe your symptoms"),
@@ -431,6 +567,24 @@ function CaseScreeningForm() {
   const nextStep = () => {
     // Validate current step
     if (currentStep === 0) {
+      if (!selectedSpecialtyId) {
+        message.error(
+          t("SPECIALTY_REQUIRED", "กรุณาเลือกแผนกที่ต้องการพบก่อน")
+        );
+        return;
+      }
+
+      const availability = specialtyAvailability?.[selectedSpecialtyId];
+      if (!availability || (availability.activeCount || 0) === 0) {
+        message.warning(
+          t(
+            "SPECIALTY_NO_DOCTOR",
+            "แผนกที่เลือกยังไม่มีแพทย์ออนไลน์ กรุณาเลือกแผนกอื่น"
+          )
+        );
+        return;
+      }
+    } else if (currentStep === 1) {
       if (!symptomsText?.trim()) {
         message.error(
           t(
@@ -440,7 +594,7 @@ function CaseScreeningForm() {
         );
         return;
       }
-    } else if (currentStep === 1) {
+    } else if (currentStep === 2) {
       if (!severity) {
         message.error(t("SEVERITY_REQUIRED", "Please select severity level"));
         return;
@@ -459,115 +613,60 @@ function CaseScreeningForm() {
   }, []);
 
   const handleSubmit = async () => {
-    if (isSubmitting) return;
-    
-    // ตรวจสอบการล็อกอิน
+    if (isSubmitting || casesState.submitting) return;
     if (!user?.user_id) {
       message.error("กรุณาเข้าสู่ระบบก่อนส่งข้อมูล");
       return;
     }
-    
+    if (!selectedSpecialty) {
+      message.error(t("SPECIALTY_REQUIRED", "กรุณาเลือกแผนกที่ต้องการพบก่อน"));
+      return;
+    }
+
     setIsSubmitting(true);
-    
+    message.loading('กำลังบันทึกข้อมูล...', 0);
     try {
-      console.log("Starting submission process...");
-      console.log("User:", user);
-      console.log("Selected files:", selectedFiles);
-      
-      // Step 1: อัพโหลดไฟล์ไปยัง Storage ก่อน (ถ้ามี)
-      let uploadedAttachments = [];
-      
-      if (selectedFiles.length > 0) {
-        const loadingMessage = message.loading('กำลังอัพโหลดไฟล์...', 0);
-        
-        try {
-          uploadedAttachments = await uploadFilesToSupabase(selectedFiles);
-          message.destroy(); // ลบ loading message
-          message.success(`อัพโหลด ${uploadedAttachments.length} ไฟล์สำเร็จ`);
-          console.log("Upload completed:", uploadedAttachments);
-        } catch (error) {
-          message.destroy();
-          console.error("Upload failed:", error);
-          message.error(`เกิดข้อผิดพลาดในการอัพโหลดไฟล์: ${error.message}`);
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
-      // Step 2: รวมข้อมูล symptoms
-      let combinedSymptoms = symptomsText || "";
-
-      // Add pain areas if selected (only if not already mentioned in symptoms)
-      if (selectedBodyParts.length > 0) {
-        const painAreasText = `Pain in: ${selectedBodyParts.join(", ")}`;
-        if (!combinedSymptoms.toLowerCase().includes("pain in")) {
-          combinedSymptoms += combinedSymptoms
-            ? `\n\n${painAreasText}`
-            : painAreasText;
-        }
-      }
-
-      // Add pain level
-      if (painLevel) {
-        combinedSymptoms += `\nPain Level: ${painLevel}/10`;
-      }
-
-      // Add duration
-      if (duration) {
-        combinedSymptoms += `\nDuration: ${duration}`;
-      }
-
-      // Add additional information
-      if (additionalInfo) {
-        combinedSymptoms += `\n\nAdditional Information: ${additionalInfo}`;
-      }
-
-      // Step 3: เตรียมข้อมูลสำหรับบันทึกใน database
-      const processedData = {
-        symptoms_text: combinedSymptoms.trim(),
-        severity: severity || "medium",
-        triage_level: calculateTriageLevel({
-          ...formData,
-          symptoms_text: combinedSymptoms.trim()
-        }),
-        status: "open",
-        attachments: uploadedAttachments, // ใช้ลิงค์ที่อัพโหลดแล้ว
-        patient_id: user.user_id,
-      };
-
-      console.log("Final processed case data:", processedData);
-
-      // Step 4: บันทึกข้อมูลใน database
-      const dbLoadingMessage = message.loading('กำลังบันทึกข้อมูล...', 0);
-      
-      const { data, error } = await supabase
-        .from('patient_cases')
-        .insert(processedData)
-        .select();
+      const resultAction = await dispatch(
+        submitPatientCase({
+          userId: user.user_id,
+          symptomsText,
+          severity,
+          painLevel,
+          duration,
+          additionalInfo,
+          selectedBodyParts,
+          selectedFiles,
+          selectedSpecialty,
+        })
+      );
 
       message.destroy();
 
-      if (error) {
-        console.error('Database error:', error);
-        message.error(`เกิดข้อผิดพลาดในการบันทึกข้อมูล: ${error.message}`);
-        return;
+      if (submitPatientCase.fulfilled.match(resultAction)) {
+        const saved = resultAction.payload.case;
+        message.success(
+          t(
+            "CASE_SUBMITTED",
+            "Case submitted successfully! A healthcare provider will review your case."
+          )
+        );
+        if (saved?.case_id) {
+          try { localStorage.setItem('activeCaseId', saved.case_id); } catch {}
+          navigate(`/easy-telemed/matching/${saved.case_id}`, {
+            state: {
+              caseData: saved,
+              specialty: selectedSpecialty,
+              doctors: selectedSpecialtyDoctors,
+            },
+            replace: true,
+          });
+        }
+      } else {
+        const errMsg = resultAction.payload || "Failed to submit";
+        message.error(`เกิดข้อผิดพลาด: ${errMsg}`);
       }
-
-      // Step 5: แสดงข้อความสำเร็จ
-      message.success(
-        t(
-          "CASE_SUBMITTED",
-          "Case submitted successfully! A healthcare provider will review your case."
-        )
-      );
-
-      console.log("Case saved successfully:", data);
-
-      // Optional: Reset form หรือ redirect
-      // resetForm();
-      
     } catch (error) {
-      console.error('Submission error:', error);
+      message.destroy();
       message.error(`เกิดข้อผิดพลาด: ${error.message}`);
     } finally {
       setIsSubmitting(false);
@@ -591,7 +690,7 @@ function CaseScreeningForm() {
 
     if (hasEmergencySymptoms || severity === "severe" || painLevel >= 8) {
       return "urgent";
-    } else if (severity === "moderate" || painLevel >= 5) {
+    } else if (severity === "moderate" || severity === "medium" || painLevel >= 5) {
       return "semi_urgent";
     } else {
       return "standard";
@@ -602,6 +701,17 @@ function CaseScreeningForm() {
     switch (currentStep) {
       case 0:
         return (
+          <SpecialtyStep
+            specialtyList={specializations}
+            selectedSpecialtyId={selectedSpecialtyId}
+            onSelect={setSelectedSpecialtyId}
+            specialtyAvailability={specialtyAvailability}
+            loading={loadingSpecialty}
+            t={t}
+          />
+        );
+      case 1:
+        return (
           <SymptomsStep
             symptomsText={symptomsText}
             setSymptomsText={setSymptomsTextCallback}
@@ -611,7 +721,7 @@ function CaseScreeningForm() {
             t={t}
           />
         );
-      case 1:
+      case 2:
         return (
           <SeverityStep
             severity={severity}
@@ -625,7 +735,7 @@ function CaseScreeningForm() {
             t={t}
           />
         );
-      case 2:
+      case 3:
         return (
           <ReviewStep
             formData={formData}
@@ -633,6 +743,7 @@ function CaseScreeningForm() {
             selectedFiles={selectedFiles}
             t={t}
             calculateTriageLevel={calculateTriageLevel}
+            selectedSpecialty={selectedSpecialty}
           />
         );
       default:
@@ -642,7 +753,14 @@ function CaseScreeningForm() {
 
   // Review Step Component แยกออกมาและใช้ React.memo
   const ReviewStep = React.memo(
-    ({ formData, selectedBodyParts, selectedFiles, t, calculateTriageLevel }) => {
+    ({
+      formData,
+      selectedBodyParts,
+      selectedFiles,
+      selectedSpecialty,
+      t,
+      calculateTriageLevel,
+    }) => {
       const triageLevel = calculateTriageLevel(formData);
       const triageColors = {
         urgent: "#f5222d",
@@ -716,6 +834,30 @@ function CaseScreeningForm() {
                 {formData.severity?.toUpperCase() || "MEDIUM"}
               </span>
             </div>
+
+            {selectedSpecialty && (
+              <div style={{ marginBottom: 16 }}>
+                <strong>{t("SELECTED_SPECIALTY", "แผนกที่เลือก")}:</strong>
+                <span
+                  style={{
+                    marginLeft: 8,
+                    padding: "4px 12px",
+                    background: "#e6f7ff",
+                    borderRadius: 12,
+                    color: "#1890ff",
+                    fontWeight: 600,
+                  }}
+                >
+                  {selectedSpecialty.name_th || selectedSpecialty.name}
+                </span>
+                <span style={{ marginLeft: 12, color: "#888", fontSize: 12 }}>
+                  {t("ACTIVE_DOCTORS_LABEL", {
+                    defaultValue: "แพทย์ที่พร้อมให้บริการ {{count}} คน",
+                    count: (formData.available_doctors || []).length,
+                  })}
+                </span>
+              </div>
+            )}
 
             {formData.painLevel && (
               <div style={{ marginBottom: 16 }}>

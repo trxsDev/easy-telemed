@@ -15,7 +15,7 @@ import { HeartOutlined } from '@ant-design/icons'
 const { Option } = Select
 const { Title, Text } = Typography
 
-function LifestyleInformationStep({ form }) {
+function LifestyleInformationStep({ form: _form }) {
   return (
     <>
       <Card size="small" style={{ marginBottom: '24px', border: 'none', boxShadow: 'none' }}>

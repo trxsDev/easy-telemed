@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, use } from "react";
-import { Button, Card, Divider, Typography, Badge, Space } from "antd";
+import React, { useState, useEffect, useCallback } from "react";
+import { Button, Card, Divider, Typography, Badge } from "antd";
 import { UserAddOutlined, TeamOutlined } from "@ant-design/icons";
 import "./styles.css";
 import RegisterForm from "../../components/RegisterForm";

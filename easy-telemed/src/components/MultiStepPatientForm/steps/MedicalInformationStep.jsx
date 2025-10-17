@@ -1,55 +1,22 @@
-import React, { useState } from 'react'
+import React from 'react'
 import { 
   Form, 
   Input, 
-  Row, 
-  Col,
   Typography,
   Card,
-  Button,
-  Space,
-  Tag,
   Divider,
   Alert,
   Tooltip
 } from 'antd'
 import { 
   MedicineBoxOutlined,
-  PlusOutlined,
-  DeleteOutlined,
   InfoCircleOutlined
 } from '@ant-design/icons'
 
 const { TextArea } = Input
 const { Title, Text } = Typography
 
-function MedicalInformationStep({ form }) {
-  const [allergies, setAllergies] = useState([])
-  const [conditions, setConditions] = useState([])
-  const [medications, setMedications] = useState([])
-  const [surgeries, setSurgeries] = useState([])
-  const [immunizations, setImmunizations] = useState([])
-
-  // Helper function to add items to arrays
-  const addItem = (setter, items, newItem) => {
-    if (newItem.trim()) {
-      const updatedItems = [...items, newItem.trim()]
-      setter(updatedItems)
-      return updatedItems
-    }
-  }
-
-  // Helper function to remove items from arrays
-  const removeItem = (setter, items, index) => {
-    const updatedItems = items.filter((_, i) => i !== index)
-    setter(updatedItems)
-    return updatedItems
-  }
-
-  // Update form values when arrays change
-  const updateFormValue = (fieldName, value) => {
-    form.setFieldsValue({ [fieldName]: value })
-  }
+function MedicalInformationStep({ form: _form }) {
 
   return (
     <>
