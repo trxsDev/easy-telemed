@@ -6,6 +6,7 @@ const PDFDocument = require('pdfkit');
 
 const router = express.Router();
 const SUMMARY_BUCKET = process.env.SUMMARY_STORAGE_BUCKET || 'attachments';
+let ensuredBuckets = new Set();
 
 const safeText = (value) => {
   if (value === null || value === undefined) return '-';
@@ -44,6 +45,26 @@ const enrichPrescriptionItems = async (items) => {
     ...item,
     drug_name: lookup.get(item?.drug_id) || item?.drug_name || item?.drug_id || '',
   }));
+};
+
+const ensureBucket = async (bucket) => {
+  if (!bucket) throw new Error('Missing bucket name');
+  if (ensuredBuckets.has(bucket)) return;
+  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+  if (listError) {
+    // If listing buckets fails due to RLS, propagate (service role should bypass)
+    throw listError;
+  }
+  if (!Array.isArray(buckets) || !buckets.find((b) => b?.name === bucket)) {
+    const { error: createError } = await supabase.storage.createBucket(bucket, {
+      public: false,
+      fileSizeLimit: 50 * 1024 * 1024, // 50 MB
+    });
+    if (createError && !String(createError.message || '').includes('already exists')) {
+      throw createError;
+    }
+  }
+  ensuredBuckets.add(bucket);
 };
 
 const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doctor, dischargeSummary, prescription, items }) => new Promise((resolve, reject) => {
@@ -182,9 +203,16 @@ router.post('/:consultationId/summarize', async (req, res) => {
         .maybeSingle();
       const patientId = caseRow?.patient_id;
       if (patientId) {
-        try { emitToUser(patientId, 'consultation:summarizing', { consultationId }); } catch (_) {}
+        try {
+          emitToUser(patientId, 'consultation:summarizing', {
+            consultationId,
+            patientId,
+            consultation: updated,
+          });
+        } catch (_) {}
       }
     }
+    try { await emitConsultationUpdate(updated); } catch (_) {}
     return res.json({ ok: true, consultation: updated, clientPhase: 'summarizing' });
   } catch (e) {
     console.error('summarize consultation error', e);
@@ -344,6 +372,8 @@ router.post('/:consultationId/summary/complete', async (req, res) => {
       prescription,
       items: enrichedItems,
     });
+
+    await ensureBucket(SUMMARY_BUCKET);
 
     const { error: uploadError } = await supabase.storage
       .from(SUMMARY_BUCKET)

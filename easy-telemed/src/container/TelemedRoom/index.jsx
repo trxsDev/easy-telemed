@@ -394,6 +394,11 @@ function TelemedRoom() {
   const emitDoctorReadySignal = useCallback((successMessage, consultationOverride) => {
     const caseId = consultation?.case_id || caseData?.case_id || fallbackCaseId;
     const consultationPayload = consultationOverride || consultation;
+    const patientId =
+      consultationPayload?.patient_id ||
+      patientInfo?.user_id ||
+      caseData?.patient_id ||
+      null;
     if (!caseId) {
       message.warning('ยังไม่พบข้อมูลเคสที่จะเชิญผู้ป่วย');
       return;
@@ -402,6 +407,7 @@ function TelemedRoom() {
       requestId: requestId || null,
       caseId,
       consultation: consultationPayload,
+      patientId,
     });
     if (successMessage) {
       message.success(successMessage);
@@ -933,10 +939,12 @@ function TelemedRoom() {
               onConnected={async (room) => {
                 try {
                   if (consultation?.consultation_id) {
-                    // Persist start; backend will set status=doctor_in_room and started_at, and may store room_id if provided
-                    await markConsultationStarted(consultation.consultation_id, room?.sid || null);
-                    // Reflect status locally for smoother UX (no room_sid in schema)
-                    setConsultation((prev) => prev ? { ...prev, status: 'doctor_in_room' } : prev);
+                    if (isDoctor) {
+                      // Persist start; backend will set status=doctor_in_room and started_at, and may store room_id if provided
+                      await markConsultationStarted(consultation.consultation_id, room?.sid || null);
+                      // Reflect status locally for smoother UX (no room_sid in schema)
+                      setConsultation((prev) => (prev ? { ...prev, status: 'doctor_in_room' } : prev));
+                    }
                     // Persist active consultation for patient to enable guarded menu
                     try {
                       localStorage.setItem('activeConsultationId', consultation.consultation_id);
