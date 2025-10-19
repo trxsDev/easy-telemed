@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Card, Typography, Space, Spin, Tag, Descriptions, Divider, Button, Badge, message, Steps, Alert } from "antd";
+import { Card, Typography, Space, Spin, Tag, Descriptions, Divider, Button, Badge, message, Steps, Alert, Modal, List } from "antd";
 import { VideoCameraOutlined } from "@ant-design/icons";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -54,6 +54,111 @@ function TelemedRoom() {
   const [isProcessingSummary, setIsProcessingSummary] = useState(false);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [videoControlSignal, setVideoControlSignal] = useState(null);
+  const [summaryPreview, setSummaryPreview] = useState({ open: false, loading: false, data: null });
+
+  const refreshSummaryDocuments = useCallback(async (targetConsultationId) => {
+    const id = targetConsultationId || consultation?.consultation_id;
+    if (!id) return null;
+    try {
+      const { data } = await supabase
+        .from('consultation_documents')
+        .select('*')
+        .eq('consultation_id', id);
+      if (!Array.isArray(data) || data.length === 0) {
+        return null;
+      }
+      const aggregated = {};
+      data.forEach((doc) => {
+        if (doc.kind) {
+          aggregated[doc.kind] = doc;
+        }
+      });
+      setSummaryDocuments((prev) => ({ ...(prev || {}), ...aggregated }));
+      return aggregated;
+    } catch (_) {
+      return null;
+    }
+  }, [consultation?.consultation_id]);
+
+  const loadSummaryPreview = useCallback(async () => {
+    const enrichItems = async (itemsCandidate) => {
+      const items = Array.isArray(itemsCandidate) ? itemsCandidate : [];
+      const drugIds = Array.from(new Set(items.map((it) => it?.drug_id).filter(Boolean)));
+      if (drugIds.length === 0) return items;
+      try {
+        const { data } = await supabase
+          .from('drug_catalog')
+          .select('drug_id, name, strength')
+          .in('drug_id', drugIds);
+        const map = new Map();
+        (data || []).forEach((drug) => {
+          const label = [drug.name, drug.strength].filter(Boolean).join(' ');
+          map.set(drug.drug_id, label || drug.name || drug.drug_id);
+        });
+        return items.map((item) => ({
+          ...item,
+          drug_name: map.get(item.drug_id) || item.drug_name || item.drug_id || '',
+        }));
+      } catch (_) {
+        return items;
+      }
+    };
+
+    const meta = summaryDocuments?.summary_pdf?.meta;
+    if (meta) {
+      return {
+        discharge: meta.discharge_summary || null,
+        prescription: meta.prescription || null,
+        items: await enrichItems(meta.prescription_items),
+      };
+    }
+    if (!consultation?.consultation_id) return null;
+    try {
+      const { data: discharge } = await supabase
+        .from('discharge_summaries')
+        .select('*')
+        .eq('consultation_id', consultation.consultation_id)
+        .maybeSingle();
+      if (!discharge) {
+        return null;
+      }
+      let prescription = null;
+      let items = [];
+      if (discharge.prescription_id) {
+        const [{ data: pres }, { data: presItems }] = await Promise.all([
+          supabase
+            .from('prescriptions')
+            .select('*')
+            .eq('prescription_id', discharge.prescription_id)
+            .maybeSingle(),
+          supabase
+            .from('prescription_items')
+            .select('*')
+            .eq('prescription_id', discharge.prescription_id),
+        ]);
+        prescription = pres || null;
+        items = await enrichItems(presItems);
+      }
+      return { discharge, prescription, items };
+    } catch (_) {
+      return null;
+    }
+  }, [summaryDocuments?.summary_pdf?.meta, consultation?.consultation_id]);
+
+  const openSummaryPreview = useCallback(async () => {
+    setSummaryPreview((prev) => ({ ...prev, open: true, loading: true }));
+    const payload = await loadSummaryPreview();
+    if (!payload) {
+      message.warning('ไม่พบข้อมูลสรุปผลสำหรับการแสดงตัวอย่าง');
+      setSummaryPreview({ open: false, loading: false, data: null });
+      return;
+    }
+    setSummaryPreview({ open: true, loading: false, data: payload });
+  }, [loadSummaryPreview]);
+
+  const closeSummaryPreview = useCallback(() => {
+    setSummaryPreview({ open: false, loading: false, data: null });
+  }, []);
 
   const isDoctor = role === "doctor";
   const isPatient = role === "patient";
@@ -286,8 +391,9 @@ function TelemedRoom() {
     }
   };
 
-  const emitDoctorReadySignal = useCallback((successMessage) => {
+  const emitDoctorReadySignal = useCallback((successMessage, consultationOverride) => {
     const caseId = consultation?.case_id || caseData?.case_id || fallbackCaseId;
+    const consultationPayload = consultationOverride || consultation;
     if (!caseId) {
       message.warning('ยังไม่พบข้อมูลเคสที่จะเชิญผู้ป่วย');
       return;
@@ -295,7 +401,7 @@ function TelemedRoom() {
     emit?.('doctor:ready', {
       requestId: requestId || null,
       caseId,
-      consultation,
+      consultation: consultationPayload,
     });
     if (successMessage) {
       message.success(successMessage);
@@ -323,24 +429,19 @@ function TelemedRoom() {
     }
   };
 
-  const handleStartSummaryCall = async (onlySignal = false) => {
+  const handleStartSummaryCall = async () => {
     if (!consultation?.consultation_id) return;
     if (!summaryReady) {
       message.warning('กรุณาสร้างเอกสารสรุปผลก่อนโทรแจ้งผล');
       return;
     }
 
-    // Ifสถานะอยู่ใน doctor_ready_conclude อยู่แล้ว ให้ส่งสัญญาณอย่างเดียว
-    if (onlySignal || consultation?.status === 'doctor_ready_conclude') {
-      emitDoctorReadySignal('ได้ส่งสัญญาณเชิญผู้ป่วยกลับมาฟังสรุปแล้ว');
-      return;
-    }
-
     setIsProcessingSummary(true);
     try {
       const res = await moveToSummarizing(consultation.consultation_id);
-      if (res?.consultation) setConsultation(res.consultation);
-      emitDoctorReadySignal('ได้ส่งสัญญาณเชิญผู้ป่วยกลับมาฟังสรุปแล้ว');
+      const updatedConsultation = res?.consultation || consultation;
+      if (updatedConsultation) setConsultation(updatedConsultation);
+      emitDoctorReadySignal('ได้ส่งสัญญาณเชิญผู้ป่วยกลับมาฟังสรุปแล้ว', updatedConsultation);
     } catch (e) {
       message.error(e.message || 'ไม่สามารถเริ่มโทรแจ้งผลได้');
     } finally {
@@ -354,10 +455,18 @@ function TelemedRoom() {
     try {
       const res = await completeSummary(consultation.consultation_id);
       if (res?.consultation) setConsultation(res.consultation);
-      if (res?.documents?.summary_pdf) {
-        setSummaryDocuments((prev) => ({ ...(prev || {}), ...res.documents }));
+      const consultationIdToUse = res?.consultation?.consultation_id || consultation.consultation_id;
+      let summaryDoc = res?.documents?.summary_pdf || null;
+      if (!summaryDoc) {
+        const refreshed = await refreshSummaryDocuments(consultationIdToUse);
+        summaryDoc = refreshed?.summary_pdf || null;
       }
-      message.success('สร้างไฟล์สรุปผลเรียบร้อย');
+      if (summaryDoc) {
+        setSummaryDocuments((prev) => ({ ...(prev || {}), summary_pdf: summaryDoc }));
+        message.success('สร้างไฟล์สรุปผลเรียบร้อย');
+      } else {
+        message.warning('ยังไม่พบเอกสารสรุปผลที่สร้างขึ้น โปรดตรวจสอบและลองใหม่');
+      }
     } catch (e) {
       message.error(e.message || 'ไม่สามารถสร้างสรุปผลได้');
     } finally {
@@ -711,32 +820,15 @@ function TelemedRoom() {
   }, [consultation?.status, isPatient]);
 
   useEffect(() => {
-    const loadDocuments = async () => {
-      if (!consultation?.consultation_id) return;
-      try {
-        const { data } = await supabase
-          .from('consultation_documents')
-          .select('*')
-          .eq('consultation_id', consultation.consultation_id);
-        if (Array.isArray(data) && data.length > 0) {
-          const aggregated = {};
-          data.forEach((doc) => {
-            if (doc.kind) {
-              aggregated[doc.kind] = doc;
-            }
-          });
-          setSummaryDocuments((prev) => ({ ...prev, ...aggregated }));
-        }
-      } catch (_) {}
-    };
-    loadDocuments();
-  }, [consultation?.consultation_id]);
+    refreshSummaryDocuments();
+  }, [consultation?.consultation_id, refreshSummaryDocuments]);
 
   const attachments = useMemo(() => parseAttachments(caseData?.attachments), [caseData?.attachments]);
   const summaryReady = Boolean(summaryDocuments?.summary_pdf);
-  const autoJoinStatuses = ['doctor_in_room', 'doctor_ready_conclude', 'active', 'summarizing'];
-  const patientAutoJoin = isPatient && consultationReady && autoJoinStatuses.includes(consultationStatus || '');
-  const doctorAutoJoin = isDoctor && consultationReady && (!consultationStatus || autoJoinStatuses.includes(consultationStatus));
+  const patientAutoJoinStatuses = ['doctor_in_room', 'active', 'summarizing'];
+  const doctorAutoJoinStatuses = ['doctor_in_room', 'active', 'summarizing'];
+  const patientAutoJoin = isPatient && consultationReady && patientAutoJoinStatuses.includes(consultationStatus || '');
+  const doctorAutoJoin = isDoctor && consultationReady && (!consultationStatus || doctorAutoJoinStatuses.includes(consultationStatus));
   const videoRoomReady = (isDoctor && consultationReady) || patientAutoJoin;
   const autoJoinEnabled = patientAutoJoin || doctorAutoJoin;
   const hideJoinFormForRole = patientAutoJoin;
@@ -935,10 +1027,16 @@ function TelemedRoom() {
                       } else {
                         controls.push(
                           <Button
+                            key="preview-summary"
+                            onClick={openSummaryPreview}
+                          >
+                            ดูตัวอย่างสรุปผล
+                          </Button>,
+                          <Button
                             key="summary-call"
                             type="primary"
                             loading={isProcessingSummary}
-                            onClick={() => handleStartSummaryCall(false)}
+                            onClick={handleStartSummaryCall}
                           >
                             โทรแจ้งผลให้ผู้ป่วย
                           </Button>
@@ -949,10 +1047,16 @@ function TelemedRoom() {
                     if (normalizedStatus === 'doctor_ready_conclude') {
                       controls.push(
                         <Button
+                          key="preview-summary-existing"
+                          onClick={openSummaryPreview}
+                        >
+                          ดูตัวอย่างสรุปผล
+                        </Button>,
+                        <Button
                           key="summary-recall"
                           type="primary"
                           loading={isProcessingSummary}
-                          onClick={() => handleStartSummaryCall(true)}
+                          onClick={handleStartSummaryCall}
                         >
                           โทรแจ้งผลให้ผู้ป่วย
                         </Button>
@@ -1119,6 +1223,9 @@ function TelemedRoom() {
             {summaryReady && (
               <Card size="small" title="เอกสารสรุปผล">
                 <Space direction="vertical">
+                  <Button onClick={openSummaryPreview}>
+                    ดูตัวอย่างเอกสารสรุปผล
+                  </Button>
                   {summaryDocuments?.summary_pdf?.public_url ? (
                     <a href={summaryDocuments.summary_pdf.public_url} target="_blank" rel="noreferrer">
                       ดาวน์โหลดสรุปผล (PDF)
@@ -1152,8 +1259,82 @@ function TelemedRoom() {
           </Card>
         )}
       </Space>
+      <Modal
+        open={summaryPreview.open}
+        onCancel={closeSummaryPreview}
+        footer={[
+          <Button key="close" onClick={closeSummaryPreview}>
+            ปิด
+          </Button>,
+          summaryDocuments?.summary_pdf?.public_url ? (
+            <Button
+              key="download"
+              type="primary"
+              href={summaryDocuments.summary_pdf.public_url}
+              target="_blank"
+            >
+              ดาวน์โหลด PDF
+            </Button>
+          ) : null,
+        ].filter(Boolean)}
+        title="ตัวอย่างเอกสารสรุปผล"
+        width={720}
+      >
+        {summaryPreview.loading ? (
+          <Spin />
+        ) : summaryPreview.data ? (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Card size="small" title="ข้อมูลการรักษา">
+              <Descriptions column={1} size="small" bordered>
+                <Descriptions.Item label="การวินิจฉัย">
+                  {summaryPreview.data.discharge?.diagnosis || '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="แผนการรักษา">
+                  <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                    {summaryPreview.data.discharge?.plan || '-'}
+                  </Paragraph>
+                </Descriptions.Item>
+                <Descriptions.Item label="คำแนะนำ">
+                  <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>
+                    {summaryPreview.data.discharge?.advice || '-'}
+                  </Paragraph>
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+            {summaryPreview.data.items?.length ? (
+              <Card size="small" title="รายการยา">
+                <List
+                  dataSource={summaryPreview.data.items}
+                  renderItem={(item, idx) => (
+                    <List.Item key={item.item_id || idx}>
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        <strong>{item.drug_name || item.drug_id || `ยา ${idx + 1}`}</strong>
+                        <Space wrap>
+                          <Tag color="blue">{item.dose || '-'}</Tag>
+                          <Tag color="green">{item.route || '-'}</Tag>
+                          <Tag color="purple">{item.frequency || '-'}</Tag>
+                          <Tag color="gold">{item.duration || '-'}</Tag>
+                        </Space>
+                        <Paragraph style={{ marginBottom: 0 }}>
+                          ปริมาณ: {item.quantity ?? '-'}
+                        </Paragraph>
+                        <Paragraph style={{ marginBottom: 0 }}>
+                          คำแนะนำ: {item.instruction || '-'}
+                        </Paragraph>
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            ) : (
+              <Alert message="ไม่มีรายการยาในสรุปผลนี้" type="info" showIcon />
+            )}
+          </Space>
+        ) : (
+          <Alert type="warning" message="ไม่พบข้อมูลสำหรับแสดงตัวอย่าง" />
+        )}
+      </Modal>
     </div>
   );
 }
-
 export default TelemedRoom;

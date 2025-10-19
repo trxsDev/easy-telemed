@@ -25,6 +25,7 @@ import PatientWait from "./container/PatientWait";
 import DoctorQueue from "./container/DoctorQueue";
 import DoctorConsult from "./container/DoctorConsult";
 import DoctorSchedule from "./container/DoctorSchedule";
+import ConsultationSuccess from "./container/ConsultationSuccess";
 import { Provider } from "react-redux";
 import { store } from "./store";
 
@@ -148,6 +149,18 @@ const router = createBrowserRouter([
             pendingRedirect="/easy-telemed/onboarding/doctor"
           >
             <DoctorSchedule />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "consultation/:consultationId/success",
+        element: (
+          <ProtectedRoute
+            allowed={["patient", "doctor", "admin"]}
+            requireVerified
+            pendingRedirect="/easy-telemed/onboarding/doctor"
+          >
+            <ConsultationSuccess />
           </ProtectedRoute>
         ),
       },

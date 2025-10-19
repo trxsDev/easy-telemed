@@ -2,8 +2,120 @@
 const express = require('express');
 const { supabase } = require('../supabase');
 const { emitToUser } = require('../socket');
+const PDFDocument = require('pdfkit');
 
 const router = express.Router();
+const SUMMARY_BUCKET = process.env.SUMMARY_STORAGE_BUCKET || 'attachments';
+
+const safeText = (value) => {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'string') return value.trim() || '-';
+  return String(value);
+};
+
+const formatDateTime = (value) => {
+  if (!value) return '-';
+  try {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return safeText(value);
+    return date.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+  } catch {
+    return safeText(value);
+  }
+};
+
+const enrichPrescriptionItems = async (items) => {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const drugIds = Array.from(new Set(items.map((it) => it?.drug_id).filter(Boolean)));
+  if (drugIds.length === 0) return items;
+  const { data, error } = await supabase
+    .from('drug_catalog')
+    .select('drug_id, name, strength')
+    .in('drug_id', drugIds);
+  if (error) {
+    return items;
+  }
+  const lookup = new Map();
+  (data || []).forEach((drug) => {
+    const label = [drug?.name, drug?.strength].filter(Boolean).join(' ');
+    lookup.set(drug.drug_id, label || drug?.name || drug?.drug_id);
+  });
+  return items.map((item) => ({
+    ...item,
+    drug_name: lookup.get(item?.drug_id) || item?.drug_name || item?.drug_id || '',
+  }));
+};
+
+const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doctor, dischargeSummary, prescription, items }) => new Promise((resolve, reject) => {
+  try {
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(18).text('Telemedicine Consultation Summary', { align: 'center' });
+    doc.moveDown();
+    doc.fontSize(12);
+    doc.text(`Generated At: ${formatDateTime(new Date().toISOString())}`);
+    doc.text(`Consultation ID: ${consultationId}`);
+    doc.text(`Consultation Status: ${safeText(consultation?.status)}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text('Participants', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(12);
+    doc.text(`Patient: ${safeText(patient?.display_name)} (${safeText(consultation?.patient_id)})`);
+    doc.text(`Doctor: ${safeText(doctor?.display_name)} (${safeText(consultation?.doctor_id)})`);
+    if (caseData?.requested_specialty) {
+      doc.text(`Specialty: ${safeText(caseData.requested_specialty)}`);
+    }
+    doc.moveDown();
+
+    if (caseData?.symptoms_text) {
+      doc.fontSize(14).text('Presenting Symptoms', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(12).text(caseData.symptoms_text, { align: 'left' });
+      doc.moveDown();
+    }
+
+    doc.fontSize(14).text('Clinical Summary', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(12).text(`Diagnosis: ${safeText(dischargeSummary?.diagnosis)}`);
+    doc.text(`Treatment Plan: ${safeText(dischargeSummary?.plan)}`);
+    doc.text(`Advice: ${safeText(dischargeSummary?.advice)}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text('Medication', { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(12);
+    if (Array.isArray(items) && items.length > 0) {
+      items.forEach((item, idx) => {
+        doc.text(`${idx + 1}. ${safeText(item.drug_name)}`);
+        const details = [
+          item.dose ? `Dose: ${safeText(item.dose)}` : null,
+          item.route ? `Route: ${safeText(item.route)}` : null,
+          item.frequency ? `Frequency: ${safeText(item.frequency)}` : null,
+          item.duration ? `Duration: ${safeText(item.duration)}` : null,
+          Number.isFinite(item.quantity) ? `Quantity: ${item.quantity}` : null,
+          item.instruction ? `Instructions: ${safeText(item.instruction)}` : null,
+        ].filter(Boolean);
+        if (details.length > 0) {
+          details.forEach((line) => doc.text(`   - ${line}`));
+        }
+        doc.moveDown(0.3);
+      });
+    } else {
+      doc.text('No medications prescribed.');
+    }
+    doc.moveDown();
+
+    doc.fontSize(12).text('--- End of Summary ---', { align: 'center' });
+    doc.end();
+  } catch (err) {
+    reject(err);
+  }
+});
 
 // Mark consultation as started and store Twilio room SID
 router.post('/:consultationId/start', async (req, res) => {
@@ -132,6 +244,162 @@ router.post('/:consultationId/summary/complete', async (req, res) => {
     const { consultationId } = req.params;
     if (!consultationId) return res.status(400).json({ error: 'Missing consultationId' });
 
+    const { data: consultationRow, error: consultationError } = await supabase
+      .from('consultations')
+      .select('*')
+      .eq('consultation_id', consultationId)
+      .maybeSingle();
+    if (consultationError) throw consultationError;
+    if (!consultationRow) return res.status(404).json({ error: 'ไม่พบข้อมูลการปรึกษา' });
+
+    const { data: dischargeSummary, error: dischargeError } = await supabase
+      .from('discharge_summaries')
+      .select('*')
+      .eq('consultation_id', consultationId)
+      .maybeSingle();
+    if (dischargeError) throw dischargeError;
+    if (!dischargeSummary) {
+      return res.status(400).json({ error: 'ยังไม่ได้บันทึกสรุปผลและใบสั่งยา' });
+    }
+
+    let caseRow = null;
+    if (consultationRow.case_id) {
+      const { data: caseDataRow, error: caseError } = await supabase
+        .from('patient_cases')
+        .select('*')
+        .eq('case_id', consultationRow.case_id)
+        .maybeSingle();
+      if (!caseError && caseDataRow) {
+        caseRow = caseDataRow;
+      }
+    }
+
+    let patientRow = null;
+    if (consultationRow.patient_id) {
+      const { data: patientData, error: patientError } = await supabase
+        .from('app_users')
+        .select('user_id, display_name, phone')
+        .eq('user_id', consultationRow.patient_id)
+        .maybeSingle();
+      if (!patientError && patientData) {
+        patientRow = patientData;
+      }
+    }
+
+    let doctorRow = null;
+    if (consultationRow.doctor_id) {
+      const { data: doctorData, error: doctorError } = await supabase
+        .from('app_users')
+        .select('user_id, display_name, phone')
+        .eq('user_id', consultationRow.doctor_id)
+        .maybeSingle();
+      if (!doctorError && doctorData) {
+        doctorRow = doctorData;
+      }
+    }
+
+    let prescription = null;
+    let prescriptionItems = [];
+    if (dischargeSummary.prescription_id) {
+      const { data: prescriptionRow, error: prescriptionError } = await supabase
+        .from('prescriptions')
+        .select('*')
+        .eq('prescription_id', dischargeSummary.prescription_id)
+        .maybeSingle();
+      if (prescriptionError) throw prescriptionError;
+      prescription = prescriptionRow || null;
+
+      const { data: items, error: itemsError } = await supabase
+        .from('prescription_items')
+        .select('*')
+        .eq('prescription_id', dischargeSummary.prescription_id);
+      if (itemsError) throw itemsError;
+      prescriptionItems = Array.isArray(items) ? items : [];
+    }
+
+    const documentMeta = {
+      discharge_summary: dischargeSummary,
+      prescription,
+      prescription_items: prescriptionItems,
+      generated_at: new Date().toISOString(),
+    };
+
+    const cleanIdFragment = (value) => {
+      if (!value) return 'unknown';
+      return String(value).replace(/[^a-zA-Z0-9_-]/g, '');
+    };
+    const storageFileName = `summary-${cleanIdFragment(dischargeSummary.summary_id || consultationId)}.pdf`;
+    const storagePath = `consultation-documents/${consultationId}/summary/${storageFileName}`;
+
+    const enrichedItems = await enrichPrescriptionItems(prescriptionItems);
+    documentMeta.prescription_items = enrichedItems;
+
+    const pdfBuffer = await buildSummaryPdf({
+      consultationId,
+      consultation: consultationRow,
+      caseData: caseRow,
+      patient: patientRow,
+      doctor: doctorRow,
+      dischargeSummary,
+      prescription,
+      items: enrichedItems,
+    });
+
+    const { error: uploadError } = await supabase.storage
+      .from(SUMMARY_BUCKET)
+      .upload(storagePath, pdfBuffer, {
+        contentType: 'application/pdf',
+        upsert: true,
+      });
+    if (uploadError) throw uploadError;
+
+    const { data: publicUrlData } = supabase.storage
+      .from(SUMMARY_BUCKET)
+      .getPublicUrl(storagePath);
+    const publicUrl = publicUrlData?.publicUrl || null;
+
+    documentMeta.storage_bucket = SUMMARY_BUCKET;
+    documentMeta.public_url = publicUrl;
+
+    let summaryDocument = null;
+    const { data: existingDocument, error: existingDocumentError } = await supabase
+      .from('consultation_documents')
+      .select('*')
+      .eq('consultation_id', consultationId)
+      .eq('kind', 'summary_pdf')
+      .maybeSingle();
+    if (existingDocumentError) throw existingDocumentError;
+
+    if (existingDocument) {
+      const updatePayload = {
+        meta: documentMeta,
+        storage_path: storagePath,
+        public_url: publicUrl,
+      };
+      const { data: updatedDocument, error: updateDocumentError } = await supabase
+        .from('consultation_documents')
+        .update(updatePayload)
+        .eq('document_id', existingDocument.document_id)
+        .select('*')
+        .maybeSingle();
+      if (updateDocumentError) throw updateDocumentError;
+      summaryDocument = updatedDocument;
+    } else {
+      const { data: insertedDocument, error: insertDocumentError } = await supabase
+        .from('consultation_documents')
+        .insert({
+          consultation_id: consultationId,
+          kind: 'summary_pdf',
+          storage_path: storagePath,
+          public_url: publicUrl,
+          meta: documentMeta,
+        })
+        .select('*')
+        .maybeSingle();
+      if (insertDocumentError) throw insertDocumentError;
+      summaryDocument = insertedDocument;
+    }
+
     const updates = {
       status: 'doctor_ready_conclude',
       summary_stage: 'ready',
@@ -148,7 +416,11 @@ router.post('/:consultationId/summary/complete', async (req, res) => {
 
     await emitConsultationUpdate(updated);
 
-    return res.json({ ok: true, consultation: updated });
+    return res.json({
+      ok: true,
+      consultation: updated,
+      documents: summaryDocument ? { summary_pdf: summaryDocument } : undefined,
+    });
   } catch (e) {
     console.error('complete summary error', e);
     return res.status(500).json({ error: e.message });
@@ -189,7 +461,6 @@ router.post('/:consultationId/paid', async (req, res) => {
 
     const updates = {
       status: 'completed',
-      manual_paid_at: new Date().toISOString(),
       ended_at: new Date().toISOString(),
     };
 
