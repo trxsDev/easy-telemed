@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Button, Input, message, Card, Space, Typography, Row, Col, Badge, Alert, Modal, Tooltip } from 'antd';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Button, Input, message, Card, Space, Typography, Row, Col, Badge, Alert, Modal, Tooltip, Spin } from 'antd';
 import { 
   VideoCameraOutlined, 
   AudioOutlined, 
@@ -13,7 +13,7 @@ import twilioVideoService from '../../services/twilioVideoServiceV2';
 import { useUserAuthSupabase } from '../../context/UserAuthContextSupabase';
 import './TwilioRoom.css';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 function TwilioVideoRoom({
   defaultRoomName = '',
@@ -24,8 +24,12 @@ function TwilioVideoRoom({
   lockIdentity = false,
   onConnected,
   onDisconnected,
+  controlSignal,
+  skipPreview = false,
+  canJoin = true,
 }) {
-  const { user } = useUserAuthSupabase();
+  const AUTO_JOIN_MAX_ATTEMPTS = 3;
+  const { user, role } = useUserAuthSupabase();
   
   // State management
   const [roomName, setRoomName] = useState(defaultRoomName || '');
@@ -39,15 +43,59 @@ function TwilioVideoRoom({
   const [currentRoomName, setCurrentRoomName] = useState('');
   const [permissionIssue, setPermissionIssue] = useState(null);
   const [secureContextIssue, setSecureContextIssue] = useState(false);
+  const [connectError, setConnectError] = useState(null);
+  const [canRetryJoin, setCanRetryJoin] = useState(false);
   // Prevent repeated auto-join attempts causing reconnect loops
-  const autoJoinStateRef = useRef({ key: '', attempted: false });
+  const autoJoinStateRef = useRef({ key: '', attempted: false, attempts: 0, manualOnly: false });
   const [previewOpen, setPreviewOpen] = useState(false);
   const [joinPending, setJoinPending] = useState(false);
+  const disconnectIntentRef = useRef({ intentional: false, allowReconnect: false });
+  const previewKey = useMemo(() => {
+    const baseIdentity = defaultIdentity || user?.email || user?.user_id || 'guest';
+    return `twilioPreview:${baseIdentity}`;
+  }, [defaultIdentity, user?.email, user?.user_id]);
+  const [hasShownPreview, setHasShownPreview] = useState(() => {
+    if (!previewKey) return false;
+    try {
+      return sessionStorage.getItem(previewKey) === '1';
+    } catch (_) {
+      return false;
+    }
+  });
 
   // Refs for video containers (inline and modal)
   const localInlineVideoRef = useRef(null);
   const localModalVideoRef = useRef(null);
   const remoteVideosRef = useRef(new Map());
+
+  useEffect(() => {
+    if (!previewKey) {
+      setHasShownPreview(false);
+      return;
+    }
+    try {
+      setHasShownPreview(sessionStorage.getItem(previewKey) === '1');
+    } catch (_) {
+      setHasShownPreview(false);
+    }
+  }, [previewKey]);
+
+  const markPreviewShown = useCallback(() => {
+    if (!previewKey) return;
+    try {
+      sessionStorage.setItem(previewKey, '1');
+    } catch (_) {}
+    setHasShownPreview(true);
+  }, [previewKey]);
+
+  useEffect(() => {
+    if (!canJoin) {
+      setPreviewOpen(false);
+      setCanRetryJoin(false);
+      setConnectError(null);
+      autoJoinStateRef.current = { ...autoJoinStateRef.current, attempted: false, attempts: 0, manualOnly: false };
+    }
+  }, [canJoin]);
 
   // Initialize identity from user or props
   useEffect(() => {
@@ -68,6 +116,33 @@ function TwilioVideoRoom({
     }
   }, [user, lockIdentity, defaultIdentity]);
 
+  useEffect(() => {
+    if (!controlSignal) return;
+    const userRole = role || user?.role || 'guest';
+    if (controlSignal.target && controlSignal.target !== userRole) {
+      return;
+    }
+    if (controlSignal.type === 'hangup') {
+      const retain = Boolean(controlSignal.retainMedia);
+      disconnectIntentRef.current = { intentional: true, allowReconnect: retain };
+      twilioVideoService
+        .hangupAndReset(retain)
+        .catch(() => {})
+        .finally(() => {
+          if (!retain) {
+            setLocalTracksReady(false);
+            setCanRetryJoin(false);
+            setConnectError(null);
+          } else if (!autoJoin) {
+            setCanRetryJoin(true);
+          }
+          setAudioEnabled(false);
+          setVideoEnabled(false);
+          onDisconnected?.();
+        });
+    }
+  }, [autoJoin, controlSignal, onDisconnected, role, user?.role]);
+
   const attachLocalVideoTo = useCallback((containerRef) => {
     if (!containerRef?.current) return;
     try {
@@ -84,13 +159,29 @@ function TwilioVideoRoom({
 
   const setupLocalTracks = useCallback(async () => {
     try {
+      const existingTracks = Array.isArray(twilioVideoService.localTracks) ? twilioVideoService.localTracks : [];
+
+      if (existingTracks.length > 0) {
+        const videoTrack = existingTracks.find((track) => track.kind === 'video');
+        if (videoTrack) {
+          try { videoTrack.enable?.(); } catch (_) {}
+          if (previewOpen && localModalVideoRef.current) {
+            twilioVideoService.attachTrackToElement(videoTrack, localModalVideoRef.current, { isLocal: true });
+          } else if (localInlineVideoRef.current) {
+            twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true });
+          }
+        }
+        setLocalTracksReady(true);
+        setPermissionIssue(null);
+        return existingTracks;
+      }
+
       const tracks = await twilioVideoService.createLocalTracks({
         video: { width: 640, height: 480 },
         audio: true
       });
 
-      // Attach local video track
-      const videoTrack = tracks.find(track => track.kind === 'video');
+      const videoTrack = tracks.find((track) => track.kind === 'video');
       if (videoTrack) {
         if (previewOpen && localModalVideoRef.current) {
           twilioVideoService.attachTrackToElement(videoTrack, localModalVideoRef.current, { isLocal: true });
@@ -102,15 +193,16 @@ function TwilioVideoRoom({
       setLocalTracksReady(true);
       setPermissionIssue(null);
       message.success('กล้องและไมโครโฟนพร้อมใช้งาน');
+      return tracks;
     } catch (error) {
       console.error('Error setting up local tracks:', error);
-      // Common cause: user denied or insecure context
       if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
         setPermissionIssue(error.name);
       }
       message.error('ไม่สามารถเข้าถึงกล้องและไมโครโฟนได้');
+      throw error;
     }
-  }, []);
+  }, [previewOpen]);
 
   const handleTrackSubscribed = useCallback((track, participant) => {
     console.log(`Track subscribed: ${track.kind} from ${participant.identity}`);
@@ -173,10 +265,25 @@ function TwilioVideoRoom({
     setCurrentRoomName('');
     setParticipants([]);
     remoteVideosRef.current.clear();
-    // Mark auto-join as attempted so we don't immediately rejoin and loop
-    autoJoinStateRef.current.attempted = true;
+    const { intentional, allowReconnect } = disconnectIntentRef.current;
+    const { manualOnly } = autoJoinStateRef.current;
+    const shouldRetryAuto = !manualOnly && (allowReconnect || !intentional);
+    if (!intentional) {
+      setConnectError(error?.message || 'การเชื่อมต่อถูกตัด กรุณาลองใหม่');
+      autoJoinStateRef.current.attempts = (autoJoinStateRef.current.attempts || 0) + 1;
+      autoJoinStateRef.current.attempts = Math.min(autoJoinStateRef.current.attempts, AUTO_JOIN_MAX_ATTEMPTS);
+      if (autoJoinStateRef.current.attempts >= AUTO_JOIN_MAX_ATTEMPTS) {
+        autoJoinStateRef.current.manualOnly = true;
+      }
+    }
+    autoJoinStateRef.current.attempted = shouldRetryAuto ? false : true;
+    setCanRetryJoin((!intentional && !autoJoin) || manualOnly);
+    if (manualOnly) {
+      autoJoinStateRef.current.manualOnly = true;
+    }
+    disconnectIntentRef.current = { intentional: false, allowReconnect: false };
     onDisconnected?.(error);
-  }, [onDisconnected]);
+  }, [autoJoin, onDisconnected]);
 
   const setupRoomEventListeners = useCallback((room) => {
     room.on('participantConnected', handleParticipantConnected);
@@ -209,6 +316,23 @@ function TwilioVideoRoom({
       return;
     }
 
+    if (!canJoin) {
+      message.info('ยังไม่พร้อมให้เข้าร่วมห้อง');
+      return;
+    }
+    if (autoJoinStateRef.current.manualOnly && !options.force) {
+      setConnectError('การเชื่อมต่อก่อนหน้านี้ล้มเหลว กรุณากดปุ่มเตรียมอุปกรณ์เพื่อลองใหม่');
+      setCanRetryJoin(true);
+      return;
+    }
+
+    disconnectIntentRef.current = { intentional: false, allowReconnect: false };
+    setConnectError(null);
+    setCanRetryJoin(false);
+    if (!options.force && !autoJoinStateRef.current.manualOnly) {
+      autoJoinStateRef.current.attempts += 1;
+      autoJoinStateRef.current.attempts = Math.min(autoJoinStateRef.current.attempts, AUTO_JOIN_MAX_ATTEMPTS);
+    }
     setIsConnecting(true);
 
     try {
@@ -232,6 +356,14 @@ function TwilioVideoRoom({
       setCurrentRoomName(targetRoomName);
       setRoomName(targetRoomName);
       setIdentity(targetIdentity);
+      setCanRetryJoin(false);
+      autoJoinStateRef.current = {
+        ...autoJoinStateRef.current,
+        attempted: true,
+        attempts: 0,
+        manualOnly: false,
+      };
+      markPreviewShown();
       message.success(`เข้าร่วมห้อง "${targetRoomName}" สำเร็จ`);
       onConnected?.(room);
 
@@ -255,26 +387,46 @@ function TwilioVideoRoom({
     } catch (error) {
       console.error('Error joining room:', error);
       message.error('ไม่สามารถเข้าร่วมห้องได้: ' + error.message);
+      setConnectError(error.message || 'unknown error');
+      setCanRetryJoin(true);
+      const nextAttempts = Math.min(autoJoinStateRef.current.attempts, AUTO_JOIN_MAX_ATTEMPTS);
+      autoJoinStateRef.current = {
+        ...autoJoinStateRef.current,
+        attempts: nextAttempts,
+        manualOnly: options.force ? autoJoinStateRef.current.manualOnly : nextAttempts >= AUTO_JOIN_MAX_ATTEMPTS,
+        attempted: options.force
+          ? autoJoinStateRef.current.attempted
+          : (nextAttempts < AUTO_JOIN_MAX_ATTEMPTS ? false : true),
+      };
     } finally {
       setIsConnecting(false);
     }
-  }, [handleParticipantConnected, identity, onConnected, roomName, setupRoomEventListeners]);
+  }, [handleParticipantConnected, identity, onConnected, roomName, setupRoomEventListeners, canJoin, markPreviewShown, audioEnabled, videoEnabled, previewOpen]);
 
   const openPreviewModal = useCallback(async () => {
+    if (!canJoin) {
+      message.info('ยังไม่มีห้องให้เข้าร่วม');
+      return;
+    }
     // Open modal first
     setPreviewOpen(true);
+    setConnectError(null);
+    setCanRetryJoin(false);
     // Immediately request camera/mic on the same user gesture
     try {
       if (!localTracksReady) {
         await setupLocalTracks();
       }
     } catch (_) {}
-  }, [localTracksReady, setupLocalTracks]);
+  }, [canJoin, localTracksReady, setupLocalTracks]);
 
   const closePreviewModal = useCallback(() => {
     setPreviewOpen(false);
     setJoinPending(false);
-  }, []);
+    if (!isConnected) {
+      autoJoinStateRef.current.attempted = false;
+    }
+  }, [isConnected]);
 
   const confirmJoinFromPreview = useCallback(async () => {
     if (!localTracksReady) {
@@ -283,7 +435,7 @@ function TwilioVideoRoom({
     }
     setJoinPending(true);
     try {
-      await joinRoom({ roomName: defaultRoomName, identity: defaultIdentity });
+      await joinRoom({ roomName: defaultRoomName, identity: defaultIdentity, force: true });
       setPreviewOpen(false);
     } finally {
       setJoinPending(false);
@@ -292,12 +444,18 @@ function TwilioVideoRoom({
 
   const leaveRoom = useCallback(() => {
     // ปิดห้องและอุปกรณ์ทั้งหมดทันทีตามที่ร้องขอ
+    disconnectIntentRef.current = { intentional: true, allowReconnect: false };
     try { twilioVideoService.hangupAndReset(); } catch (_) {}
     setIsConnected(false);
     setCurrentRoomName('');
     setParticipants([]);
     remoteVideosRef.current.clear();
     onDisconnected?.();
+    setCanRetryJoin(false);
+    setConnectError(null);
+    autoJoinStateRef.current = { ...autoJoinStateRef.current, attempted: false, attempts: 0, manualOnly: false };
+    setAudioEnabled(false);
+    setVideoEnabled(false);
     
     // Clear remote video containers
     const remoteContainer = document.getElementById('remote-videos-container');
@@ -373,11 +531,7 @@ function TwilioVideoRoom({
   // When modal opens/closes, (re)attach local preview to appropriate container
   useEffect(() => {
     if (previewOpen) {
-      if (!localTracksReady) {
-        setupLocalTracks();
-      } else {
-        attachLocalVideoTo(localModalVideoRef);
-      }
+      setupLocalTracks().catch(() => {});
     } else {
       // Re-attach to inline container if not connected view
       if (localTracksReady && localInlineVideoRef.current) {
@@ -387,26 +541,64 @@ function TwilioVideoRoom({
   }, [previewOpen, localTracksReady, setupLocalTracks, attachLocalVideoTo]);
 
   useEffect(() => {
-    // Build a stable key for the target session
     const targetKey = `${defaultRoomName}::${defaultIdentity}`;
     if (autoJoinStateRef.current.key !== targetKey) {
-      // Room/identity changed -> allow a new auto-join attempt
-      autoJoinStateRef.current = { key: targetKey, attempted: false };
+      autoJoinStateRef.current = { ...autoJoinStateRef.current, key: targetKey, attempted: false, attempts: 0, manualOnly: false };
     }
 
-    if (
-      autoJoin &&
-      !isConnected &&
-      !isConnecting &&
-      defaultRoomName &&
-      defaultIdentity &&
-      !autoJoinStateRef.current.attempted
-    ) {
-      // For auto-join paths (doctor), open preview modal instead of immediate join
-      autoJoinStateRef.current.attempted = true;
+    const { manualOnly, attempts } = autoJoinStateRef.current;
+    const shouldAutoJoin = autoJoin
+      && canJoin
+      && !isConnected
+      && !isConnecting
+      && defaultRoomName
+      && defaultIdentity
+      && !autoJoinStateRef.current.attempted
+      && !manualOnly
+      && attempts < AUTO_JOIN_MAX_ATTEMPTS;
+
+    if (!shouldAutoJoin) return;
+
+    const previewRequired = !skipPreview && !hasShownPreview;
+    autoJoinStateRef.current.attempted = true;
+    setConnectError(null);
+
+    if (previewRequired) {
+      setCanRetryJoin(false);
       setPreviewOpen(true);
+      return;
     }
-  }, [autoJoin, localTracksReady, isConnected, isConnecting, defaultRoomName, defaultIdentity, joinRoom]);
+
+    const attemptJoin = async () => {
+      if (!localTracksReady) {
+        const cachedTracks = Array.isArray(twilioVideoService.localTracks) ? twilioVideoService.localTracks : [];
+        if (cachedTracks.length === 0) {
+          try {
+            await setupLocalTracks();
+          } catch (_) {
+            if (!skipPreview) setPreviewOpen(true);
+            return;
+          }
+        }
+      }
+
+      try {
+        await joinRoom({ roomName: defaultRoomName, identity: defaultIdentity });
+      } catch (err) {
+        console.error('Auto join failed:', err);
+        setCanRetryJoin(true);
+        if (!skipPreview) {
+          setPreviewOpen(true);
+        } else {
+          message.error('ไม่สามารถเชื่อมต่อห้องได้ ลองใหม่อีกครั้ง');
+        }
+      }
+    };
+
+    attemptJoin();
+  }, [autoJoin, canJoin, localTracksReady, isConnected, isConnecting, defaultRoomName, defaultIdentity, joinRoom, setupLocalTracks, skipPreview, hasShownPreview]);
+
+  const showEmptyState = !isConnected && !canJoin;
 
   return (
     <div className="twilio-video-room">
@@ -422,49 +614,62 @@ function TwilioVideoRoom({
       </div>
 
       {!isConnected ? (
-        hideJoinForm && autoJoin ? (
+        showEmptyState ? (
+          <Card style={{ maxWidth: 600, margin: '0 auto', minHeight: 280, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Paragraph style={{ margin: 0, textAlign: 'center', color: '#666' }}>
+              ยังไม่มีการปรึกษาให้เข้าร่วม กรุณาเริ่มรับเคสหรือรอการเชิญ
+            </Paragraph>
+          </Card>
+        ) : hideJoinForm && autoJoin ? (
           <Card title="เตรียมอุปกรณ์เพื่อเข้าร่วม" style={{ maxWidth: 600, margin: '0 auto' }}>
             <Space direction="vertical" style={{ width: '100%' }}>
+              <Paragraph>
+                ระบบกำลังเตรียมกล้องและไมโครโฟนให้คุณโดยอัตโนมัติ โปรดรอสักครู่ หากเบราว์เซอร์ถามอนุญาตให้เลือก “Allow” เพื่อใช้งานได้ทันที
+              </Paragraph>
+              {connectError && (
+                <Alert
+                  type="error"
+                  showIcon
+                  message="ไม่สามารถเชื่อมต่อห้องได้"
+                  description={connectError}
+                />
+              )}
+              <div
+                style={{
+                  width: '100%',
+                  height: 280,
+                  border: '1px dashed #d9d9d9',
+                  borderRadius: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#000',
+                  position: 'relative'
+                }}
+              >
+                <div ref={localInlineVideoRef} style={{ width: '100%', height: '100%' }} />
+                {isConnecting && <Spin style={{ position: 'absolute' }} />}
+              </div>
               {secureContextIssue && (
                 <Alert
                   type="warning"
                   showIcon
                   message="จำเป็นต้องใช้ HTTPS หรือ localhost"
-                  description="เบราว์เซอร์จะบล็อกการใช้งานกล้อง/ไมค์บน HTTP โปรดเปิดผ่าน https:// หรือใช้งานบน localhost ระหว่างพัฒนา"
+                  description="เบราว์เซอร์จะบล็อกการใช้งานกล้อง/ไมโครโฟนบน HTTP โปรดเปิดผ่าน https:// หรือใช้งานบน localhost ระหว่างพัฒนา"
                 />
               )}
-              {/* Clickable preview area to request permission */}
-              <div
-                style={{ width: '100%', height: 280, border: '1px dashed #d9d9d9', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', position: 'relative' }}
-              >
-                <div ref={localInlineVideoRef} style={{ width: '100%', height: '100%' }} />
-                {(!localTracksReady || !videoEnabled) && (
-                  <VideoCameraOutlined style={{ fontSize: 48, color: '#888', position: 'absolute' }} />
-                )}
-              </div>
-              <Space style={{ justifyContent: 'center', width: '100%' }}>
-                <Tooltip title={audioEnabled ? 'ปิดไมโครโฟน' : 'เปิดไมโครโฟน'}>
-                  <Button
-                    type={audioEnabled ? 'default' : 'primary'}
-                    danger={!audioEnabled}
-                    icon={audioEnabled ? <AudioOutlined /> : <AudioMutedOutlined />}
-                    onClick={toggleAudio}
-                  />
-                </Tooltip>
-                <Tooltip title={videoEnabled ? 'ปิดกล้อง' : 'เปิดกล้อง'}>
-                  <Button
-                    type={videoEnabled ? 'default' : 'primary'}
-                    danger={!videoEnabled}
-                    icon={videoEnabled ? <VideoCameraOutlined /> : <StopOutlined />}
-                    onClick={toggleVideo}
-                  />
-                </Tooltip>
-              </Space>
-              {localTracksReady && (<Alert type="success" showIcon message="อุปกรณ์พร้อม กดยืนยันเพื่อเข้าห้อง" />)}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <Button onClick={() => setPreviewOpen(true)}>เปิดพรีวิวแบบเต็ม</Button>
-                <Button type="primary" disabled={joinPending} loading={joinPending} onClick={confirmJoinFromPreview}>ยืนยันเข้าห้อง</Button>
-              </div>
+              {!isConnecting && canRetryJoin && (
+                <Button
+                  type="primary"
+                  icon={<VideoCameraOutlined />}
+                  onClick={() => joinRoom({ roomName: defaultRoomName, identity: defaultIdentity, force: true })}
+                >
+                  ลองเชื่อมต่อใหม่
+                </Button>
+              )}
+              {!isConnecting && !previewOpen && !hasShownPreview && (
+                <Button onClick={openPreviewModal}>เปิดพรีวิว</Button>
+              )}
             </Space>
           </Card>
         ) : (
@@ -485,6 +690,14 @@ function TwilioVideoRoom({
                 message="ไม่ได้รับสิทธิ์ใช้งานกล้อง/ไมโครโฟน"
                 description="โปรดกดปุ่มอนุญาตที่ด้านบนของเบราว์เซอร์ หรือไปที่การตั้งค่าเว็บไซต์เพื่ออนุญาต จากนั้นกดปุ่ม เตรียมอุปกรณ์ อีกครั้ง"
                 style={{ whiteSpace: 'pre-line' }}
+              />
+            )}
+            {connectError && (
+              <Alert
+                type="error"
+                showIcon
+                message="ไม่สามารถเชื่อมต่อห้องได้"
+                description={connectError}
               />
             )}
 
@@ -515,17 +728,16 @@ function TwilioVideoRoom({
                 />
               </Tooltip>
             </Space>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', width: '100%' }}>
-              <Button size="large" onClick={openPreviewModal}>เปิดพรีวิวแบบเต็ม</Button>
+            <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
               <Button
                 type="primary"
                 size="large"
                 icon={<VideoCameraOutlined />}
-                onClick={confirmJoinFromPreview}
+                onClick={openPreviewModal}
                 loading={isConnecting || joinPending}
-                disabled={false}
+                disabled={isConnecting || joinPending}
               >
-                {isConnecting || joinPending ? 'กำลังเข้าร่วม...' : 'ยืนยันเข้าร่วมห้อง'}
+                เตรียมอุปกรณ์
               </Button>
             </div>
           </Space>

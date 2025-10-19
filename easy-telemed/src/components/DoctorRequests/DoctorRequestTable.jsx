@@ -41,7 +41,7 @@ function DoctorRequestTable({ requestList, onProcessed }) {
         
       if (error) {
         console.error('Download error:', error);
-        message.error('Failed to load document');
+        message.error(t('doctorRequests.loadDocumentError'));
         return;
       }
       
@@ -52,7 +52,7 @@ function DoctorRequestTable({ requestList, onProcessed }) {
       }
     } catch (parseError) {
       console.error('Error parsing documents:', parseError);
-      message.error('Failed to parse document information');
+      message.error(t('doctorRequests.parseDocumentError'));
     }
     setIsBlock(false);
 
@@ -113,13 +113,13 @@ function DoctorRequestTable({ requestList, onProcessed }) {
       }
 
       message.success(
-        status === "approved" ? t("APPROVED", "Approved") : t("REJECTED", "Rejected")
+        status === "approved" ? t("doctorRequests.approveSuccess") : t("doctorRequests.rejectSuccess")
       );
       onProcessed?.();
       setIsBlock(true);
     } catch (error) {
       console.error("Error updating doctor request status", error);
-      message.error(t("UPDATE_FAILED", "Update failed"));
+      message.error(t("doctorRequests.updateFailed"));
     } finally {
       setProcessingId(null);
     }
@@ -136,30 +136,30 @@ function DoctorRequestTable({ requestList, onProcessed }) {
 
   const columns = [
     {
-      title: "Full Name",
+      title: t("doctorRequests.fullNameColumn"),
       dataIndex: "applicant_full_name_form",
       key: "full_name",
-      render: (text) => text || "Unnamed",
+      render: (text) => text || t("doctorRequests.unnamedFallback"),
       width: "20%",
     },
     {
-      title: "Email",
+      title: t("doctorRequests.emailColumn"),
       dataIndex: "applicant_email",
       key: "email",
       width: "20%",
     },
     {
-      title: "License No",
+      title: t("doctorRequests.licenseColumn"),
       key: "license_no",
       dataIndex: "license_no",
       width: "15%",
     },
     {
-      title: "Specialties",
+      title: t("doctorRequests.specialtiesColumn"),
       key: "specialties",
       render: (_, record) => {
         const specialties = record.specialties;
-        if (!specialties) return "N/A";
+        if (!specialties) return t("common.notAvailable");
         
         try {
           // Parse JSON string if it's a string, otherwise use as-is if it's already an array
@@ -169,7 +169,7 @@ function DoctorRequestTable({ requestList, onProcessed }) {
           
           // Handle single object format
           if (parsedSpecialties && typeof parsedSpecialties === 'object' && !Array.isArray(parsedSpecialties)) {
-            return  i18n.language === 'th' ? parsedSpecialties.name_th :  parsedSpecialties.name || "N/A";
+            return  i18n.language === 'th' ? parsedSpecialties.name_th :  parsedSpecialties.name || t("common.notAvailable");
           }
           
           if (Array.isArray(parsedSpecialties) && parsedSpecialties.length > 0) {
@@ -196,29 +196,29 @@ function DoctorRequestTable({ requestList, onProcessed }) {
           console.error("Error parsing specialties:", error);
         }
         
-        return "N/A";
+        return t("common.notAvailable");
       },
       width: "15%",
     },
     {
-      title: "Credential",
+      title: t("doctorRequests.credentialColumn"),
       render: (_, record) => {
         return (
         <Button type="primary" onClick={() => showModal(record)}>
-          View
+          {t("common.view")}
         </Button>)
       },
       width: "10%",
     },
     {
-      title: "Action",
+      title: t("doctorRequests.actionColumn"),
       key: "action",
       render: (_, record) => (
         <Space size="middle">
           <Popconfirm
-            title="Approve this doctor?"
-            okText="Yes"
-            cancelText="No"
+            title={t("doctorRequests.approveConfirmTitle")}
+            okText={t("common.yes")}
+            cancelText={t("common.no")}
             onConfirm={() => handleApprove(record.applicant_user_id)}
           >
             <Button
@@ -228,13 +228,13 @@ function DoctorRequestTable({ requestList, onProcessed }) {
               size="medium"
               disabled={isBlock}
             >
-              {isBlock? "Check first" : "Approve"}
+              {isBlock ? t("doctorRequests.checkFirst") : t("common.approve")}
             </Button>
           </Popconfirm>
           <Popconfirm
-            title="Reject this doctor?"
-            okText="Yes"
-            cancelText="No"
+            title={t("doctorRequests.rejectConfirmTitle")}
+            okText={t("common.yes")}
+            cancelText={t("common.no")}
             onConfirm={() => handleReject(record.applicant_user_id)}
           >
             <Button
@@ -243,7 +243,7 @@ function DoctorRequestTable({ requestList, onProcessed }) {
               loading={processingId === record.applicant_user_id}
               size="medium"
             >
-              {t("REJECT", "Reject")}
+              {t("common.reject")}
             </Button>
           </Popconfirm>
         </Space>
@@ -284,20 +284,32 @@ function DoctorRequestTable({ requestList, onProcessed }) {
           showSizeChanger: true,
           showQuickJumper: true,
           showTotal: (total, range) =>
-            `${range[0]}-${range[1]} of ${total} items`,
+            t("doctorRequests.tableSummary", {
+              start: range[0],
+              end: range[1],
+              total,
+            }),
         }}
         scroll={{ y: 400 }}
       />
       <Modal
-  title={selectedRecord?.applicant_full_name_form ? `${t("CREDENTIAL_FOR", "Credential for")} ${selectedRecord.applicant_full_name_form}` : t("CREDENTIAL", "Credential")}
-        closable={{ "aria-label": "Custom Close Button" }}
+        title={
+          selectedRecord?.applicant_full_name_form
+            ? t("doctorRequests.credentialFor", {
+                name: selectedRecord.applicant_full_name_form,
+              })
+            : t("doctorRequests.credentialModalTitle")
+        }
+        closable={{ "aria-label": t("common.close") }}
+        okText={t("common.close")}
+        cancelText={t("common.cancel")}
         open={isModalOpen}
         onOk={handleOk}
         onCancel={handleCancel}
         loading={true}
       >
         <Card>
-          <img src={credentialsDoc} alt="" style={{ width: "100%" }} />
+          <img src={credentialsDoc} alt={t("doctorRequests.credentialAlt")} style={{ width: "100%" }} />
         </Card>
       
       </Modal>

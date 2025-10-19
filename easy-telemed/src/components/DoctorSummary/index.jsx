@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Form, Input, Button, Table, Space, Select, InputNumber, message } from 'antd';
+import { useTranslation } from 'react-i18next';
 import { fetchDrugs, ensurePrescription, addPrescriptionItems, upsertDischargeSummary } from '../../services/consultationService';
 
 function DoctorSummary({ consultationId, doctorId }) {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [drugs, setDrugs] = useState([]);
   const [items, setItems] = useState([]);
@@ -16,7 +18,7 @@ function DoctorSummary({ consultationId, doctorId }) {
         const { drugs: list } = await fetchDrugs();
         setDrugs(list || []);
       } catch (e) {
-        message.error('โหลดรายการยาไม่สำเร็จ');
+        message.error(t('doctorSummary.fetchDrugsError'));
       }
     })();
   }, []);
@@ -25,7 +27,7 @@ function DoctorSummary({ consultationId, doctorId }) {
 
   const columns = [
     {
-      title: 'ยา',
+      title: t('doctorSummary.drugColumn'),
       dataIndex: 'drug_id',
       render: (value, record, idx) => (
         <Select
@@ -34,19 +36,19 @@ function DoctorSummary({ consultationId, doctorId }) {
           value={value}
           onChange={(val) => updateItem(idx, { drug_id: val })}
           style={{ width: '100%' }}
-          placeholder="เลือกยา"
+          placeholder={t('doctorSummary.drugPlaceholder')}
           filterOption={(input, option) => (option?.label || '').toLowerCase().includes(input.toLowerCase())}
         />
       )
     },
-    { title: 'ขนาดยา', dataIndex: 'dose', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { dose: e.target.value })} /> },
-    { title: 'วิธีให้ยา', dataIndex: 'route', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { route: e.target.value })} /> },
-    { title: 'ความถี่', dataIndex: 'frequency', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { frequency: e.target.value })} /> },
-    { title: 'ระยะเวลา', dataIndex: 'duration', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { duration: e.target.value })} /> },
-    { title: 'จำนวน', dataIndex: 'quantity', width: 120, render: (v, _, idx) => <InputNumber min={0} value={v} onChange={(val) => updateItem(idx, { quantity: val })} style={{ width: '100%' }} /> },
-    { title: 'คำแนะนำ', dataIndex: 'instruction', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { instruction: e.target.value })} /> },
+    { title: t('doctorSummary.doseColumn'), dataIndex: 'dose', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { dose: e.target.value })} /> },
+    { title: t('doctorSummary.routeColumn'), dataIndex: 'route', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { route: e.target.value })} /> },
+    { title: t('doctorSummary.frequencyColumn'), dataIndex: 'frequency', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { frequency: e.target.value })} /> },
+    { title: t('doctorSummary.durationColumn'), dataIndex: 'duration', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { duration: e.target.value })} /> },
+    { title: t('doctorSummary.quantityColumn'), dataIndex: 'quantity', width: 120, render: (v, _, idx) => <InputNumber min={0} value={v} onChange={(val) => updateItem(idx, { quantity: val })} style={{ width: '100%' }} /> },
+    { title: t('doctorSummary.instructionColumn'), dataIndex: 'instruction', render: (v, _, idx) => <Input value={v} onChange={(e) => updateItem(idx, { instruction: e.target.value })} /> },
     { title: '', dataIndex: 'actions', width: 80, render: (_, __, idx) => (
-      <Button danger onClick={() => removeItem(idx)}>ลบ</Button>
+      <Button danger onClick={() => removeItem(idx)}>{t('common.delete')}</Button>
     ) },
   ];
 
@@ -78,9 +80,9 @@ function DoctorSummary({ consultationId, doctorId }) {
         advice: values.advice || null,
         prescription_id: pres.prescription_id,
       });
-      message.success('บันทึกสรุปผลเรียบร้อย');
+      message.success(t('doctorSummary.saveSuccess'));
     } catch (e) {
-      message.error(e.message || 'บันทึกไม่สำเร็จ');
+      message.error(e.message || t('doctorSummary.saveError'));
     } finally {
       setSaving(false);
     }
@@ -88,23 +90,23 @@ function DoctorSummary({ consultationId, doctorId }) {
 
   return (
     <Space direction="vertical" style={{ width: '100%' }}>
-      <Card title="สรุปผลการรักษา">
+      <Card title={t('doctorSummary.summaryCardTitle')}>
         <Form form={form} layout="vertical">
-          <Form.Item name="diagnosis" label="การวินิจฉัย">
-            <Input.TextArea rows={2} placeholder="ใส่การวินิจฉัย" />
+          <Form.Item name="diagnosis" label={t('doctorSummary.diagnosisLabel')}>
+            <Input.TextArea rows={2} placeholder={t('doctorSummary.diagnosisPlaceholder')} />
           </Form.Item>
-          <Form.Item name="plan" label="แผนการรักษา">
-            <Input.TextArea rows={2} placeholder="ใส่แผนการรักษา" />
+          <Form.Item name="plan" label={t('doctorSummary.planLabel')}>
+            <Input.TextArea rows={2} placeholder={t('doctorSummary.planPlaceholder')} />
           </Form.Item>
-          <Form.Item name="advice" label="คำแนะนำ">
-            <Input.TextArea rows={2} placeholder="ใส่คำแนะนำ" />
+          <Form.Item name="advice" label={t('doctorSummary.adviceLabel')}>
+            <Input.TextArea rows={2} placeholder={t('doctorSummary.advicePlaceholder')} />
           </Form.Item>
         </Form>
       </Card>
 
-      <Card title="สั่งยา">
+      <Card title={t('doctorSummary.prescriptionCardTitle')}>
         <div style={{ marginBottom: 8 }}>
-          <Button onClick={addRow}>เพิ่มรายการยา</Button>
+          <Button onClick={addRow}>{t('doctorSummary.addMedicationButton')}</Button>
         </div>
         <Table
           dataSource={items}
@@ -118,7 +120,7 @@ function DoctorSummary({ consultationId, doctorId }) {
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <Button type="primary" onClick={onSave} loading={saving}>
-          บันทึกสรุปผลและใบสั่งยา
+          {t('doctorSummary.saveButton')}
         </Button>
       </div>
     </Space>

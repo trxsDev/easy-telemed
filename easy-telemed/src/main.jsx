@@ -25,6 +25,7 @@ import PatientWait from "./container/PatientWait";
 import DoctorQueue from "./container/DoctorQueue";
 import DoctorConsult from "./container/DoctorConsult";
 import DoctorSchedule from "./container/DoctorSchedule";
+import ConsultationSuccess from "./container/ConsultationSuccess";
 import { Provider } from "react-redux";
 import { store } from "./store";
 
@@ -112,6 +113,14 @@ const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowed={["patient"]} requireVerified>
             <PatientWait />
+          </ProtectedRoute>
+        ),
+      },
+      {
+        path: "consultation/:consultationId/success",
+        element: (
+          <ProtectedRoute allowed={["patient", "doctor", "admin"]} requireVerified>
+            <ConsultationSuccess />
           </ProtectedRoute>
         ),
       },

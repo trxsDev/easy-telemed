@@ -3,8 +3,10 @@ import {Link, useNavigate } from "react-router-dom";
 import { Form, Alert, Input, Button, Typography, Space, Card, message } from "antd";
 import { useUserAuthSupabase } from "../context/UserAuthContextSupabase";
 import {ChevronLeft} from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 function SignUpForm() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -25,12 +27,12 @@ function SignUpForm() {
       }
       
       // Trigger in backend will create app_users row (role=patient)
-      message.success('Account created successfully! Please check your email to verify.');
+      message.success(t('auth.signUp.successMessage'));
       console.log('Navigating to verify-email...');
       navigate("/verify-email");
     } catch (err) {
       console.error('Signup error:', err);
-      setError(err.message || 'An error occurred during signup');
+      setError(err.message || t('auth.signUp.errorFallback'));
     } finally {
       setLoading(false);
     }
@@ -54,6 +56,8 @@ function SignUpForm() {
           type="text"
           icon={<ChevronLeft />}
           onClick={() => navigate('/')}
+          aria-label={t('auth.signUp.backButton')}
+          title={t('auth.signUp.backButton')}
           style={{
             position: 'absolute',
             left: 8,
@@ -67,10 +71,10 @@ function SignUpForm() {
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <div style={{ textAlign: 'center' }}>
             <Typography.Title level={2} style={{ margin: 0, color: '#333' }}>
-              Create Account
+              {t('auth.signUp.title')}
             </Typography.Title>
             <Typography.Text type="secondary">
-              Join us today! It's quick and easy
+              {t('auth.signUp.subtitle')}
             </Typography.Text>
           </div>
 
@@ -85,15 +89,15 @@ function SignUpForm() {
 
           <Form layout="vertical" onFinish={handeSubmit}>
             <Form.Item
-              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>Email Address</span>}
+              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>{t("EMAIL_ADDRESS", "Email Address")}</span>}
               name="username"
               rules={[
-                { required: true, message: "Please input your email!" },
-                { type: "email", message: "Please enter a valid email!" },
+                { required: true, message: t('auth.signUp.emailRequired') },
+                { type: "email", message: t('auth.signUp.emailInvalid') },
               ]}
             >
               <Input 
-                placeholder="Enter your email" 
+                placeholder={t("EMAIL_INPUT_REQUIRED", "Enter your email")}
                 size="large"
                 style={{ borderRadius: '8px' }}
                 onChange={(e) => setEmail(e.target.value)} 
@@ -101,12 +105,12 @@ function SignUpForm() {
             </Form.Item>
 
             <Form.Item
-              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>Password</span>}
+              label={<span style={{ fontSize: '14px', fontWeight: '500' }}> {t("PASSWORD", "Password")}</span>}
               name="password"
-              rules={[{ required: true, message: "Please input your password!" }]}
+              rules={[{ required: true, message: t('auth.signUp.passwordRequired') }]}
             >
               <Input.Password 
-                placeholder="Enter your password" 
+                placeholder={t('auth.signUp.passwordPlaceholder')} 
                 size="large"
                 style={{ borderRadius: '8px' }}
                 onChange={(e) => setPassword(e.target.value)} 
@@ -130,13 +134,13 @@ function SignUpForm() {
                   fontWeight: '500'
                 }}
               >
-                {loading ? 'Creating...' : 'Create Account'}
+                {loading ? t('auth.signUp.creating') : t('auth.signUp.submit')}
               </Button>
             </Form.Item>
           </Form>
           <div style={{ textAlign: 'center' }}>
             <Typography.Text type="secondary">
-              Already have an account?{' '}
+              {t('auth.signUp.alreadyHaveAccount')}{" "}
               <Link 
                 to="/signin"
                 style={{ 
@@ -145,7 +149,7 @@ function SignUpForm() {
                   textDecoration: 'none'
                 }}
               >
-                Sign In
+                {t('auth.signUp.signInLink')}
               </Link>
             </Typography.Text>
           </div>

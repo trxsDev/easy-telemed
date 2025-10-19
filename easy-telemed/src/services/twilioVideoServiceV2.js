@@ -94,8 +94,8 @@ export class TwilioVideoService {
       // If we already have local tracks, prefer reusing them and avoid implicit capture
       // Else, honor the explicit audio/video flags passed in options
       const connectOptions = hasLocalTracks
-        ? { ...baseOptions, tracks: this.localTracks, audio: false, video: false }
-        : { ...baseOptions };
+        ? { ...baseOptions, tracks: this.localTracks, audio: false, video: false, insights: false }
+        : { ...baseOptions, insights: false };
 
       const connectPromise = connect(token, connectOptions).then((room) => {
         this.currentRoom = room;
@@ -110,6 +110,7 @@ export class TwilioVideoService {
             Array.from(room.localParticipant.tracks.values()).map((pub) => pub.track && pub.track.sid)
           );
           this.localTracks.forEach((t) => {
+            try { t.enable?.(); } catch (_) {}
             if (!t.sid || !published.has(t.sid)) {
               try { room.localParticipant.publishTrack(t); } catch (_) {}
             }
@@ -130,7 +131,7 @@ export class TwilioVideoService {
   }
 
   // ออกจากห้อง
-  leaveRoom() {
+  leaveRoom(retainLocalMedia = false) {
     if (this.currentRoom) {
       try {
         const lp = this.currentRoom.localParticipant;
@@ -144,35 +145,33 @@ export class TwilioVideoService {
       this.currentRoom.disconnect();
       this.currentRoom = null;
     }
-    
-    // หยุด local tracks
-    this.localTracks.forEach(track => {
-      track.stop();
-      track.detach();
-    });
-    this.localTracks = [];
-    
-    // ล้าง participants
+
+    if (retainLocalMedia) {
+      this.localTracks.forEach((track) => {
+        try { track.disable?.(); } catch (_) {}
+        try { track.detach?.(); } catch (_) {}
+      });
+    } else {
+      this.localTracks.forEach((track) => {
+        try { track.stop?.(); } catch (_) {}
+        try { track.detach?.(); } catch (_) {}
+      });
+      this.localTracks = [];
+    }
+
     this.participants.clear();
   }
 
   // วางสาย + reset อุปกรณ์ (best-effort)
-  async hangupAndReset() {
-    try { this.leaveRoom(); } catch (_) {}
-    // Try to stop any lingering media stream tracks
-    try {
-      const streams = await navigator.mediaDevices?.getUserMedia({ audio: true, video: true }).catch(() => null);
-      if (streams) {
-        if (streams.getTracks) {
-          streams.getTracks().forEach((t) => {
-            try { t.stop(); } catch (_) {}
-          });
+  async hangupAndReset(retainLocalMedia = false) {
+    try { this.leaveRoom(retainLocalMedia); } catch (_) {}
+    if (!retainLocalMedia) {
+      try {
+        if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
+          await navigator.mediaDevices.enumerateDevices();
         }
-        // Older browsers may need to stop separately
-        if (streams.getAudioTracks) streams.getAudioTracks().forEach(t => { try { t.stop(); } catch (_) {} });
-        if (streams.getVideoTracks) streams.getVideoTracks().forEach(t => { try { t.stop(); } catch (_) {} });
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
   }
 
   // เริ่มต้น local video/audio

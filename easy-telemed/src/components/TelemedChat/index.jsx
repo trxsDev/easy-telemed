@@ -41,12 +41,14 @@ function TelemedChat({ consultationId, currentUser }) {
         const filtered = prev.filter(m => {
           // optimistic message has temp- prefix
           if (String(m.message_id).startsWith('temp-')) {
-            // Match by sender_id, type, content, file_url
+            // Match by sender_id, type, content, file_url, created_at (±5s)
+            const timeDiff = Math.abs(new Date(m.created_at).getTime() - new Date(msg.created_at).getTime());
             if (
               m.sender_id === msg.sender_id &&
               m.type === msg.type &&
               m.content === msg.content &&
-              m.file_url === msg.file_url
+              m.file_url === msg.file_url &&
+              timeDiff < 5000
             ) {
               return false; // remove temp
             }
