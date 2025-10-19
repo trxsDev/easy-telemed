@@ -12,8 +12,8 @@ const TopBar = () => {
   return (
     <div className="topbar">
       <h1>
-        {t("topBar.brandPrefix")}{" "}
-        <img src={medcross} alt={t("topBar.brandIconAlt")} className="cross-icon" /> {t("topBar.brandSuffix")}
+        Easy Tele{" "}
+        <img src={medcross} alt="medical cross" className="cross-icon" /> med
       </h1>
       <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
         <Link to="/doctor-register">

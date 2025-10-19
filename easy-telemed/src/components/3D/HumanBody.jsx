@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo, Suspense, useEffect, useCallback } from "react";
+import React, { useRef, useState, useMemo, Suspense, useEffect } from "react";
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
@@ -224,9 +224,6 @@ function HumanBody({
 }) {
   const [clickedParts, setClickedParts] = useState([]);
   const [hovering, setHovering] = useState(false);
-  const [webglLost, setWebglLost] = useState(false);
-  const [canvasKey, setCanvasKey] = useState(0);
-  const removeGlListenersRef = useRef(() => {});
 
   const handlePartClick = (part) => {
     const next = clickedParts.includes(part)
@@ -251,19 +248,6 @@ function HumanBody({
     "rightLeg",
   ];
 
-  useEffect(() => {
-    return () => {
-      try {
-        removeGlListenersRef.current?.();
-      } catch (_) {}
-    };
-  }, []);
-
-  const handleWebglRetry = useCallback(() => {
-    setWebglLost(false);
-    setCanvasKey((prev) => prev + 1);
-  }, []);
-
   return (
     <div
       style={{
@@ -277,92 +261,38 @@ function HumanBody({
         cursor: hovering ? "pointer" : "auto",
       }}
     >
-      {!webglLost ? (
-        <ModelErrorBoundary>
-          <Canvas
-            key={canvasKey}
-            camera={{ position: [0, 2, 6], fov: 60 }}
-            dpr={[1, 2]}
-            gl={{ antialias: true, powerPreference: "high-performance" }}
-            onCreated={({ gl }) => {
-              const canvas = gl?.domElement;
-              if (!canvas) return;
-              const handleContextLost = (event) => {
-                event?.preventDefault?.();
-                setWebglLost(true);
-              };
-              const handleContextRestored = () => {
-                setWebglLost(false);
-              };
-              canvas.addEventListener("webglcontextlost", handleContextLost, false);
-              canvas.addEventListener("webglcontextrestored", handleContextRestored, false);
-              removeGlListenersRef.current = () => {
-                canvas.removeEventListener("webglcontextlost", handleContextLost, false);
-                canvas.removeEventListener("webglcontextrestored", handleContextRestored, false);
-              };
-            }}
-          >
-            <Suspense fallback={<LoadingFallback />}>
-              {/* Lights */}
-              <ambientLight intensity={0.7} />
-              <directionalLight position={[10, 10, 5]} intensity={1} />
-              <pointLight position={[-10, -10, -5]} intensity={0.5} />
-              <pointLight position={[5, 5, 5]} intensity={0.3} />
-
-              {/* Model */}
-              <HumanModel
-                onPartClick={handlePartClick}
-                selectedParts={allSelectedParts}
-                onHoverChange={setHovering}
-                modelUrl={modelUrl}
-              />
-
-              {/* Controls */}
-              <OrbitControls
-                enableZoom
-                enablePan
-                enableRotate
-                maxDistance={12}
-                minDistance={3}
-              />
-            </Suspense>
-          </Canvas>
-        </ModelErrorBoundary>
-      ) : (
-        <div
-          style={{
-            inset: 0,
-            position: "absolute",
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
-            alignItems: "center",
-            justifyContent: "center",
-            color: "white",
-            padding: 20,
-            textAlign: "center",
-            background: "rgba(0,0,0,0.45)",
-          }}
+      <ModelErrorBoundary>
+        <Canvas
+          camera={{ position: [0, 2, 6], fov: 60 }}
+          dpr={[1, 2]}
+          gl={{ antialias: true, powerPreference: "high-performance" }}
         >
-          <div style={{ fontSize: 42 }}>🖥️</div>
-          <div>WebGL context lost. ปิดการแสดงผล 3D ชั่วคราวเพื่อให้ระบบเสถียรขึ้น</div>
-          <button
-            onClick={handleWebglRetry}
-            style={{
-              background: "rgba(255,255,255,0.9)",
-              color: "#333",
-              borderRadius: 20,
-              border: "none",
-              padding: "8px 16px",
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.25)",
-            }}
-          >
-            ลองโหลดใหม่
-          </button>
-        </div>
-      )}
+          <Suspense fallback={<LoadingFallback />}>
+            {/* Lights */}
+            <ambientLight intensity={0.7} />
+            <directionalLight position={[10, 10, 5]} intensity={1} />
+            <pointLight position={[-10, -10, -5]} intensity={0.5} />
+            <pointLight position={[5, 5, 5]} intensity={0.3} />
+
+            {/* Model */}
+            <HumanModel
+              onPartClick={handlePartClick}
+              selectedParts={allSelectedParts}
+              onHoverChange={setHovering}
+              modelUrl={modelUrl}
+            />
+
+            {/* Controls */}
+            <OrbitControls
+              enableZoom
+              enablePan
+              enableRotate
+              maxDistance={12}
+              minDistance={3}
+            />
+          </Suspense>
+        </Canvas>
+      </ModelErrorBoundary>
 
       {/* Selected chips / quick selectors */}
       <div

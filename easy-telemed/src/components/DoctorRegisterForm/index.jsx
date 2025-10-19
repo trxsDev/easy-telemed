@@ -3,10 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Form, Alert, Input, Button, Typography, Space, Card, message } from "antd";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 import { supabase } from "../../api/SupabaseClient";
-import { useTranslation } from "react-i18next";
 
 function DoctorRegisterForm() {
-  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -54,7 +52,7 @@ function DoctorRegisterForm() {
         .upsert([payload], { onConflict: 'user_id' }); // ต้องมี unique/PK บน user_id
       if (upsertErr) throw upsertErr;
 
-      message.success(t('doctorRegisterForm.successMessage'));
+      message.success('Doctor account created');
       navigate("/easy-telemed/home");
     } catch (err) {
       setError(err.message);
@@ -78,10 +76,10 @@ function DoctorRegisterForm() {
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <div style={{ textAlign: 'center' }}>
             <Typography.Title level={2} style={{ margin: 0, color: '#333' }}>
-                {t('doctorRegisterForm.title')}
+                Thanks for your interest 
             </Typography.Title>
             <Typography.Text type="secondary">
-              {t('doctorRegisterForm.subtitle')}
+              Please sign up to your doctor account
             </Typography.Text>
           </div>
 
@@ -89,15 +87,15 @@ function DoctorRegisterForm() {
 
           <Form layout="vertical" onFinish={handeSubmit}>
             <Form.Item
-              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>{t("EMAIL_ADDRESS", "Email Address")}</span>}
+              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>Email Address</span>}
               name="username"
               rules={[
-                { required: true, message: t('auth.signUp.emailRequired') },
-                { type: "email", message: t('auth.signUp.emailInvalid') },
+                { required: true, message: "Please input your email!" },
+                { type: "email", message: "Please enter a valid email!" },
               ]}
             >
               <Input
-                placeholder={t("EMAIL_INPUT_REQUIRED", "Enter your email")}
+                placeholder="Enter your email"
                 size="large"
                 style={{ borderRadius: '8px' }}
                 onChange={(e) => setEmail(e.target.value)}
@@ -105,14 +103,14 @@ function DoctorRegisterForm() {
             </Form.Item>
 
             <Form.Item
-              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>{t("PASSWORD", "Password")}</span>}
+              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>Password</span>}
               name="password"
               rules={[
-                { required: true, message: t('auth.signUp.passwordRequired') },
+                { required: true, message: "Please input your password!" },
               ]}
             >
               <Input.Password
-                placeholder={t('auth.signUp.passwordPlaceholder')}
+                placeholder="Enter your password"
                 size="large"
                 style={{ borderRadius: '8px' }}
                 onChange={(e) => setPassword(e.target.value)}
@@ -136,7 +134,7 @@ function DoctorRegisterForm() {
                   fontWeight: '500'
                 }}
               >
-                {loading ? t('doctorRegisterForm.creating') : t('doctorRegisterForm.submit')}
+                {loading ? 'Creating...' : 'Register as Doctor'}
               </Button>
             </Form.Item>
           </Form>

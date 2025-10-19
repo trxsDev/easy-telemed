@@ -21,33 +21,6 @@ export async function moveToSummarizing(consultationId) {
   return res.json();
 }
 
-export async function pauseConsultation(consultationId) {
-  const res = await fetch(`${API_BASE}/api/consultations/${consultationId}/on-hold`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error(`Failed to pause consultation: ${res.status}`);
-  return res.json();
-}
-
-export async function completeSummary(consultationId) {
-  const res = await fetch(`${API_BASE}/api/consultations/${consultationId}/complete-summary`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error(`Failed to complete summary: ${res.status}`);
-  return res.json();
-}
-
-export async function moveToAwaitingPayment(consultationId) {
-  const res = await fetch(`${API_BASE}/api/consultations/${consultationId}/awaiting-payment`, {
-    method: 'POST',
-    credentials: 'include',
-  });
-  if (!res.ok) throw new Error(`Failed to move to awaiting payment: ${res.status}`);
-  return res.json();
-}
-
 export async function endConsultation(consultationId) {
   const res = await fetch(`${API_BASE}/api/consultations/${consultationId}/end`, {
     method: 'POST',
@@ -96,27 +69,12 @@ export async function upsertDischargeSummary(consultationId, payload) {
   return res.json();
 }
 
-export async function markConsultationPaid(consultationId, payload) {
-  const res = await fetch(`${API_BASE}/api/consultations/${consultationId}/mark-paid`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify(payload || {}),
-  });
-  if (!res.ok) throw new Error('Failed to mark consultation as paid');
-  return res.json();
-}
-
 export default {
   markConsultationStarted,
   moveToSummarizing,
-  pauseConsultation,
-  completeSummary,
-  moveToAwaitingPayment,
   endConsultation,
   fetchDrugs,
   ensurePrescription,
   addPrescriptionItems,
   upsertDischargeSummary,
-  markConsultationPaid,
 };

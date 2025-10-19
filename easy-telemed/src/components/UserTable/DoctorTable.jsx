@@ -12,38 +12,38 @@ function DoctorTable({ userData }) {
 
   const columns = [
     {
-      title: t("userTable.noColumn"),
+      title: t("NO","No"),
       key: "no",
       render: (_, __, index) => index + 1,
       width: "5%",
     },
     {
-      title: t("userTable.fullNameColumn"),
+      title: t("FULLNAME","Full Name"),
       dataIndex: "all_user_display_name",
       key: "full_name",
-      render: (text) => text || t("common.notAvailable"),
+      render: (text) => text || "N/A",
       width: "20%",
     },
     {
-      title: t("userTable.emailColumn"),
+      title: t("EMAIL","Email"),
       dataIndex: "all_user_email",
       key: "email",
       width: "20%",
     },
     {
-      title: t("doctorTable.credentialColumn"),
+      title: t("CREDENTIAL","Credential"),
       render: (_, record) => {
         const credDoc = record.credential;
         return (
         <Button type="primary" onClick={() => showModal(credDoc)} disabled={!credDoc}>
-          {t("common.view")}
+          {t("VIEW","View")}
         </Button>
         )
       },
       width: "10%",
     },
     {
-      title: t("doctorTable.verifiedColumn"),
+      title: t("VERIFIED","Verified"),
       dataIndex: "all_user_verify",
       key: "verified",
       align: "center",
@@ -121,16 +121,14 @@ function DoctorTable({ userData }) {
         pagination={{ pageSize: 5 }}
       />
       <Modal
-        title={t("doctorTable.credentialModalTitle")}
-        closable={{ "aria-label": t("common.close") }}
-        okText={t("common.close")}
-        cancelText={t("common.cancel")}
+        title="Credential"
+        closable={{ "aria-label": "Custom Close Button" }}
         open={isModalOpen}
         onOk={() => handleOk()}
         onCancel={() => setIsModalOpen(false)}
       >
           <Card>
-            <Image src={credentialsDoc} alt={t("doctorTable.credentialAlt")} style={{ width: "100%" }} />
+            <Image src={credentialsDoc} alt="" style={{ width: "100%" }} />
           </Card>
         
         

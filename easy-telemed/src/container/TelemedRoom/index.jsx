@@ -1,18 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { Card, Typography, Space, Spin, Tag, Descriptions, Divider, Button, Badge, message, Steps, Alert } from "antd";
+import { Card, Typography, Space, Spin, Tag, Descriptions, Divider, Button, Badge, message, Steps } from "antd";
 import { VideoCameraOutlined } from "@ant-design/icons";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../../api/SupabaseClient";
 import TwilioVideoRoom from "../../components/TwilioVideoRoom";
-import {
-  markConsultationStarted,
-  moveToSummarizing,
-  pauseConsultation,
-  completeSummary,
-  moveToAwaitingPayment,
-  markConsultationPaid,
-} from "../../services/consultationService";
+import { markConsultationStarted, moveToSummarizing, endConsultation } from "../../services/consultationService";
 import TelemedNotes from "../../components/TelemedNotes";
 import DoctorSummary from "../../components/DoctorSummary";
 import TelemedChat from "../../components/TelemedChat";
@@ -50,10 +43,6 @@ function TelemedRoom() {
   const [queueItems, setQueueItems] = useState([]);
   const lastQueueCountRef = useRef(0);
   const [requestId, setRequestId] = useState(null);
-  const [summaryDocuments, setSummaryDocuments] = useState(null);
-  const [isProcessingSummary, setIsProcessingSummary] = useState(false);
-  const [paymentProcessing, setPaymentProcessing] = useState(false);
-  const [videoControlSignal, setVideoControlSignal] = useState(null);
 
   const isDoctor = role === "doctor";
   const isPatient = role === "patient";
@@ -64,29 +53,16 @@ function TelemedRoom() {
     { key: "waiting", label: "รอแพทย์ตอบรับ" },
     { key: "offered", label: "ส่งคำขอไปยังแพทย์" },
     { key: "accepted", label: "แพทย์ตอบรับ" },
-    { key: "doctor_ready", label: "แพทย์กำลังเรียกเข้าห้อง" },
-    { key: "doctor_in_room", label: "กำลังพูดคุยกับแพทย์" },
-    { key: "doctor_on_hold", label: "แพทย์กำลังเตรียมสรุปผล" },
-    { key: "doctor_ready_conclude", label: "แพทย์โทรแจ้งสรุปผล" },
-    { key: "awaiting_payment", label: "รอชำระเงิน" },
-    { key: "cancel_by_error", label: "การปรึกษาถูกยกเลิก (ระบบขัดข้อง)" },
-    { key: "completed", label: "เสร็จสิ้น" },
+    { key: "doctor_ready", label: "แพทย์พร้อมเข้าพูดคุย" },
+    { key: "doctor_summarizing", label: "แพทย์กำลังสรุปผล" },
   ];
 
   const patientStatus = React.useMemo(() => {
     // Highest priority: consultation state
-    if (consultation?.status === 'awaiting_payment') return 'awaiting_payment';
-    if (consultation?.status === 'completed') return 'completed';
-    if (consultation?.status === 'cancel_by_error') return 'cancel_by_error';
-    if (consultation?.status === 'pending') return 'doctor_ready';
-    if (consultation?.status === 'doctor_ready_conclude') return 'doctor_ready_conclude';
-    if (consultation?.status === 'summarizing') return 'doctor_ready_conclude';
-    if (consultation?.status === 'on_hold') return 'doctor_on_hold';
-    if (consultation?.status === 'doctor_in_room') return 'doctor_in_room';
-    if (consultation?.consultation_id) return 'doctor_in_room';
+    if (consultation?.status === 'summarizing') return 'doctor_summarizing';
+    if (consultation?.consultation_id) return 'doctor_ready';
     // Next: match request state
     const m = matchRequest?.status;
-    if (m === 'doctor_ready') return 'doctor_ready';
     if (m === 'accepted') return 'accepted';
     if (m === 'offered') return 'offered';
     return 'waiting';
@@ -100,24 +76,13 @@ function TelemedRoom() {
   // Doctor horizontal steps (shown once case accepted)
   const DOCTOR_FLOW_STEPS = [
     { key: 'accepted', label: 'รับเคสแล้ว' },
-    { key: 'doctor_in_room', label: 'กำลังสนทนา' },
-    { key: 'on_hold', label: 'เตรียมสรุปผล' },
-    { key: 'doctor_ready_conclude', label: 'โทรแจ้งสรุปผล' },
-    { key: 'awaiting_payment', label: 'รอผู้ป่วยชำระเงิน' },
-    { key: 'cancel_by_error', label: 'ระบบขัดข้อง' },
-    { key: 'completed', label: 'เสร็จสิ้น' },
+    { key: 'active', label: 'กำลังสนทนา' },
+    { key: 'summarizing', label: 'กำลังสรุปผล' },
   ];
 
   const doctorFlowStatus = React.useMemo(() => {
-    const status = consultation?.status;
-    if (status === 'doctor_ready_conclude') return 'doctor_ready_conclude';
-    if (status === 'summarizing') return 'doctor_ready_conclude';
-    if (status === 'on_hold') return 'on_hold';
-    if (status === 'awaiting_payment') return 'awaiting_payment';
-    if (status === 'cancel_by_error') return 'cancel_by_error';
-    if (status === 'completed') return 'completed';
-    if (consultationReady && status === 'doctor_in_room') return 'doctor_in_room';
-    if (consultationReady && !status) return 'doctor_in_room';
+    if (consultation?.status === 'summarizing') return 'summarizing';
+    if (consultationReady) return 'active';
     if (matchRequest?.status === 'accepted') return 'accepted';
     return null;
   }, [consultation?.status, consultationReady, matchRequest?.status]);
@@ -127,14 +92,6 @@ function TelemedRoom() {
     const idx = DOCTOR_FLOW_STEPS.findIndex(s => s.key === doctorFlowStatus);
     return idx >= 0 ? idx : 0;
   }, [doctorFlowStatus]);
-
-  const PATIENT_STATUS_KEY = 'patientTelemedStatus';
-
-  const clearPatientTelemedFlags = useCallback(() => {
-    try { localStorage.removeItem('activeConsultationId'); } catch {}
-    try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
-    try { localStorage.removeItem(PATIENT_STATUS_KEY); } catch {}
-  }, []);
 
   const defaultRoomName = useMemo(() => {
     // Prefer live state over URL when available
@@ -205,22 +162,6 @@ function TelemedRoom() {
     };
   }, [socket, isDoctor, loadQueue]);
 
-  useEffect(() => {
-    if (!socket) return;
-    const onConsultationUpdate = (payload = {}) => {
-      if (!payload?.consultationId || !payload?.status) return;
-      if (consultation?.consultation_id === payload.consultationId) {
-        setConsultation((prev) => (prev ? { ...prev, status: payload.status } : prev));
-      } else if (!consultation && payload.consultationId === consultationId) {
-        setConsultation((prev) => (prev ? prev : { consultation_id: payload.consultationId, status: payload.status }));
-      }
-    };
-    socket.on?.('consultation:updated', onConsultationUpdate);
-    return () => {
-      socket.off?.('consultation:updated', onConsultationUpdate);
-    };
-  }, [socket, consultation?.consultation_id, consultationId]);
-
   const handleAcceptFromQueue = async (item) => {
     if (!item?.request || !isDoctor || !doctorId) return;
     setAcceptingId(item.request.request_id);
@@ -286,137 +227,9 @@ function TelemedRoom() {
     }
   };
 
-  const emitDoctorReadySignal = useCallback((successMessage) => {
-    const caseId = consultation?.case_id || caseData?.case_id || fallbackCaseId;
-    if (!caseId) {
-      message.warning('ยังไม่พบข้อมูลเคสที่จะเชิญผู้ป่วย');
-      return;
-    }
-    emit?.('doctor:ready', {
-      requestId: requestId || null,
-      caseId,
-      consultation,
-    });
-    if (successMessage) {
-      message.success(successMessage);
-    } else {
-      message.success('ได้ส่งสัญญาณเรียกผู้ป่วยแล้ว');
-    }
-  }, [emit, consultation, caseData?.case_id, fallbackCaseId, requestId]);
-
-  const handlePauseForSummary = async () => {
-    if (!consultation?.consultation_id) return;
-    setIsProcessingSummary(true);
-    try {
-      const res = await pauseConsultation(consultation.consultation_id);
-      if (res?.consultation) {
-        setConsultation(res.consultation);
-      } else {
-        setConsultation((prev) => (prev ? { ...prev, status: 'on_hold' } : prev));
-      }
-      setVideoControlSignal({ type: 'hangup', retainMedia: true, target: 'patient', ts: Date.now() });
-      message.success('พักสายผู้ป่วยและเข้าสู่ขั้นเตรียมสรุปผลแล้ว');
-    } catch (e) {
-      message.error(e.message || 'ไม่สามารถพักสายเพื่อสรุปผลได้');
-    } finally {
-      setIsProcessingSummary(false);
-    }
-  };
-
-  const handleStartSummaryCall = async (onlySignal = false) => {
-    if (!consultation?.consultation_id) return;
-    if (!summaryReady) {
-      message.warning('กรุณาสร้างเอกสารสรุปผลก่อนโทรแจ้งผล');
-      return;
-    }
-
-    // Ifสถานะอยู่ใน doctor_ready_conclude อยู่แล้ว ให้ส่งสัญญาณอย่างเดียว
-    if (onlySignal || consultation?.status === 'doctor_ready_conclude') {
-      emitDoctorReadySignal('ได้ส่งสัญญาณเชิญผู้ป่วยกลับมาฟังสรุปแล้ว');
-      return;
-    }
-
-    setIsProcessingSummary(true);
-    try {
-      const res = await moveToSummarizing(consultation.consultation_id);
-      if (res?.consultation) setConsultation(res.consultation);
-      emitDoctorReadySignal('ได้ส่งสัญญาณเชิญผู้ป่วยกลับมาฟังสรุปแล้ว');
-    } catch (e) {
-      message.error(e.message || 'ไม่สามารถเริ่มโทรแจ้งผลได้');
-    } finally {
-      setIsProcessingSummary(false);
-    }
-  };
-
-  const handleCompleteSummary = async () => {
-    if (!consultation?.consultation_id) return;
-    setIsProcessingSummary(true);
-    try {
-      const res = await completeSummary(consultation.consultation_id);
-      if (res?.consultation) setConsultation(res.consultation);
-      if (res?.documents?.summary_pdf) {
-        setSummaryDocuments((prev) => ({ ...(prev || {}), ...res.documents }));
-      }
-      message.success('สร้างไฟล์สรุปผลเรียบร้อย');
-    } catch (e) {
-      message.error(e.message || 'ไม่สามารถสร้างสรุปผลได้');
-    } finally {
-      setIsProcessingSummary(false);
-    }
-  };
-
-  const handleMoveToPayment = async () => {
-    if (!consultation?.consultation_id) return;
-    setIsProcessingSummary(true);
-    try {
-      const res = await moveToAwaitingPayment(consultation.consultation_id);
-      if (res?.consultation) setConsultation(res.consultation);
-      message.success('ส่งต่อให้ผู้ป่วยชำระเงินแล้ว');
-      if (isDoctor) {
-        setVideoControlSignal({ type: 'hangup', retainMedia: false, target: 'doctor', ts: Date.now() });
-        setConsultation(null);
-        setCaseData(null);
-        setMatchRequest(null);
-        navigate('/easy-telemed/telemedroom', { replace: true });
-        loadQueue();
-      } else {
-        loadQueue();
-      }
-    } catch (e) {
-      message.error(e.message || 'ไม่สามารถเปลี่ยนเป็นรอชำระเงินได้');
-    } finally {
-      setIsProcessingSummary(false);
-    }
-  };
-
-  const handlePatientPaid = async () => {
-    if (!consultation?.consultation_id) return;
-    setPaymentProcessing(true);
-    try {
-      const res = await markConsultationPaid(consultation.consultation_id, {});
-      if (res?.consultation) setConsultation(res.consultation);
-      message.success('บันทึกการชำระเงินเรียบร้อย');
-      if (isPatient) {
-        navigate(`/easy-telemed/consultation/${consultation.consultation_id}/success`, { replace: true });
-      } else {
-        loadQueue();
-      }
-    } catch (e) {
-      message.error(e.message || 'ไม่สามารถบันทึกการชำระเงินได้');
-    } finally {
-      setPaymentProcessing(false);
-    }
-  };
-
   const defaultIdentity = useMemo(() => {
     return user?.email || user?.displayName || user?.user_id || "guest";
   }, [user]);
-
-  const consultationStatus = consultation?.status || null;
-  const isOnHoldStatus = consultationStatus === 'on_hold';
-  const isSummarizingStatus = consultationStatus === 'doctor_ready_conclude' || consultationStatus === 'summarizing';
-  const isAwaitingPaymentStatus = consultationStatus === 'awaiting_payment';
-  const isCompletedStatus = consultationStatus === 'completed';
 
   useEffect(() => {
     const loadData = async () => {
@@ -429,7 +242,7 @@ function TelemedRoom() {
               .from('consultations')
               .select('*')
               .eq('doctor_id', doctorId)
-              .in('status', ['pending','doctor_in_room','on_hold','doctor_ready_conclude','awaiting_payment','summarizing','active'])
+              .in('status', ['pending','active'])
               .order('created_at', { ascending: false })
               .maybeSingle();
             if (consultRow) {
@@ -547,128 +360,20 @@ function TelemedRoom() {
     loadData();
   }, [consultationId, fallbackCaseId, isDoctor, doctorId]);
 
-  useEffect(() => {
-    const recoverPatientConsultation = async () => {
-      if (!isPatient) return;
-      if (consultationId || fallbackCaseId || consultation?.consultation_id) return;
-      const storedConsultId = (() => {
-        try {
-          return (
-            localStorage.getItem('activeConsultationId') ||
-            localStorage.getItem('patientInvitedConsultationId')
-          );
-        } catch {
-          return null;
-        }
-      })();
-      if (!storedConsultId) {
-        return;
-      }
-
-      setLoading(true);
-      try {
-        const { data: consultRow } = await supabase
-          .from('consultations')
-          .select('*')
-          .eq('consultation_id', storedConsultId)
-          .maybeSingle();
-
-        if (!consultRow || consultRow.patient_id !== user?.user_id) {
-          clearPatientTelemedFlags();
-          setConsultation(null);
-          setCaseData(null);
-          setMatchRequest(null);
-          return;
-        }
-
-        if (!['doctor_in_room', 'doctor_ready_conclude', 'summarizing', 'on_hold', 'active'].includes(consultRow.status || '')) {
-          clearPatientTelemedFlags();
-          setConsultation(null);
-          setCaseData(null);
-          setMatchRequest(null);
-          return;
-        }
-
-        setConsultation(consultRow);
-
-        const caseId = consultRow.case_id;
-        if (caseId) {
-          const [{ data: caseRow }, { data: matchRow }] = await Promise.all([
-            supabase.from('patient_cases').select('*').eq('case_id', caseId).maybeSingle(),
-            supabase
-              .from('match_requests')
-              .select('*')
-              .eq('case_id', caseId)
-              .order('created_at', { ascending: false })
-              .maybeSingle(),
-          ]);
-          setCaseData(caseRow || null);
-          setMatchRequest(matchRow || null);
-          if (caseRow?.patient_id) {
-            const { data: patientRow } = await supabase
-              .from('app_users')
-              .select('user_id, display_name, phone')
-              .eq('user_id', caseRow.patient_id)
-              .maybeSingle();
-            setPatientInfo(patientRow || null);
-          }
-          const docId = matchRow?.preferred_doctor_id || consultRow.doctor_id;
-          if (docId) {
-            const { data: doctorRow } = await supabase
-              .from('app_users')
-              .select('user_id, display_name, phone')
-              .eq('user_id', docId)
-              .maybeSingle();
-            setDoctorInfo(doctorRow || null);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to recover patient consultation', err);
-        clearPatientTelemedFlags();
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    recoverPatientConsultation();
-  }, [
-    isPatient,
-    consultationId,
-    fallbackCaseId,
-    consultation?.consultation_id,
-    user?.user_id,
-    clearPatientTelemedFlags,
-  ]);
-
   // Patients shouldn't be able to stay on this page without an active consultation
   useEffect(() => {
     if (loading) return;
     if (!isPatient) return;
     // Require explicit invitation flag to allow patient entry, not just presence of a consultation
     const invited = (() => { try { return localStorage.getItem('patientInvitedConsultationId'); } catch { return null; } })();
-    if (consultation?.consultation_id) {
-      if (invited && invited === consultation.consultation_id) return;
-      if (['on_hold', 'summarizing', 'awaiting_payment', 'completed'].includes(consultationStatus)) return;
-      clearPatientTelemedFlags();
-    } else {
-      clearPatientTelemedFlags();
-    }
+    if (consultation?.consultation_id && invited && invited === consultation?.consultation_id) return;
     const caseId = fallbackCaseId || caseData?.case_id;
     if (caseId) {
       navigate(`/easy-telemed/matching/${caseId}/wait`, { replace: true });
     } else {
       navigate('/easy-telemed/illness-case', { replace: true });
     }
-  }, [
-    loading,
-    isPatient,
-    consultation?.consultation_id,
-    fallbackCaseId,
-    caseData?.case_id,
-    navigate,
-    consultationStatus,
-    clearPatientTelemedFlags,
-  ]);
+  }, [loading, isPatient, consultation?.consultation_id, fallbackCaseId, caseData?.case_id, navigate]);
 
   // Load match request id for this case (used when calling patient)
   useEffect(() => {
@@ -689,57 +394,7 @@ function TelemedRoom() {
     if (!requestId) loadRequest();
   }, [consultation?.case_id, caseData?.case_id, fallbackCaseId, requestId]);
 
-  const lastStatusRef = useRef(null);
-  useEffect(() => {
-    const currentStatus = consultation?.status || null;
-    const prevStatus = lastStatusRef.current;
-    if (isPatient && currentStatus && currentStatus !== prevStatus) {
-      try {
-        localStorage.setItem(PATIENT_STATUS_KEY, currentStatus);
-      } catch (_) {}
-      if (currentStatus === 'on_hold') {
-        setVideoControlSignal({ type: 'hangup', retainMedia: true, target: 'patient', ts: Date.now() });
-      } else if (currentStatus === 'awaiting_payment') {
-        setVideoControlSignal({ type: 'hangup', retainMedia: true, target: 'patient', ts: Date.now() });
-      } else if (currentStatus === 'completed') {
-        setVideoControlSignal({ type: 'hangup', retainMedia: false, target: 'patient', ts: Date.now() });
-      } else if (currentStatus === 'cancel_by_error') {
-        setVideoControlSignal({ type: 'hangup', retainMedia: false, target: 'patient', ts: Date.now() });
-      }
-    }
-    lastStatusRef.current = currentStatus;
-  }, [consultation?.status, isPatient]);
-
-  useEffect(() => {
-    const loadDocuments = async () => {
-      if (!consultation?.consultation_id) return;
-      try {
-        const { data } = await supabase
-          .from('consultation_documents')
-          .select('*')
-          .eq('consultation_id', consultation.consultation_id);
-        if (Array.isArray(data) && data.length > 0) {
-          const aggregated = {};
-          data.forEach((doc) => {
-            if (doc.kind) {
-              aggregated[doc.kind] = doc;
-            }
-          });
-          setSummaryDocuments((prev) => ({ ...prev, ...aggregated }));
-        }
-      } catch (_) {}
-    };
-    loadDocuments();
-  }, [consultation?.consultation_id]);
-
   const attachments = useMemo(() => parseAttachments(caseData?.attachments), [caseData?.attachments]);
-  const summaryReady = Boolean(summaryDocuments?.summary_pdf);
-  const autoJoinStatuses = ['doctor_in_room', 'doctor_ready_conclude', 'active', 'summarizing'];
-  const patientAutoJoin = isPatient && consultationReady && autoJoinStatuses.includes(consultationStatus || '');
-  const doctorAutoJoin = isDoctor && consultationReady && (!consultationStatus || autoJoinStatuses.includes(consultationStatus));
-  const videoRoomReady = (isDoctor && consultationReady) || patientAutoJoin;
-  const autoJoinEnabled = patientAutoJoin || doctorAutoJoin;
-  const hideJoinFormForRole = patientAutoJoin;
 
   return (
     <div style={{ padding: 20, maxWidth: 1280, margin: "0 auto" }}>
@@ -792,59 +447,22 @@ function TelemedRoom() {
           </Space>
         </Card>
 
-        {isPatient && isOnHoldStatus && (
-          <Alert
-            type="info"
-            message="แพทย์กำลังสรุปผล"
-            description="โปรดรอสายใหม่จากแพทย์ ระบบจะแจ้งเมื่อแพทย์พร้อมพูดคุย"
-            showIcon
-          />
-        )}
-
-        {isPatient && isAwaitingPaymentStatus && (
-          <Card type="inner" title="ขั้นตอนการชำระเงิน" style={{ borderColor: '#faad14' }}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Paragraph>
-                กรุณาชำระค่าบริการตามช่องทางที่ได้รับ และกดปุ่มด้านล่างเมื่อชำระเงินเสร็จแล้วเพื่อยืนยันกับระบบ
-              </Paragraph>
-              <Button
-                type="primary"
-                loading={paymentProcessing}
-                onClick={handlePatientPaid}
-              >
-                ฉันชำระเงินเรียบร้อยแล้ว
-              </Button>
-            </Space>
-          </Card>
-        )}
-
-        {isDoctor && summaryReady && (
-          <Alert
-            type="success"
-            message="สร้างเอกสารสรุปผลสำเร็จ"
-            description="สามารถดาวน์โหลดเอกสารได้จากส่วนเอกสารสรุปผลด้านขวา และส่งต่อให้ผู้ป่วยได้ทันที"
-            showIcon
-          />
-        )}
-
   <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1.2fr)", gap: 16, alignItems: "start" }}>
           <Card style={{ minHeight: 580 }} bodyStyle={{ padding: 0, height: "100%" }}>
             <TwilioVideoRoom
               defaultRoomName={defaultRoomName}
               defaultIdentity={defaultIdentity}
-              autoJoin={autoJoinEnabled}
-              hideJoinForm={hideJoinFormForRole}
+              autoJoin={isDoctor && consultationReady}
+              hideJoinForm={isDoctor}
               lockRoomName
               lockIdentity
-              controlSignal={videoControlSignal}
-              canJoin={videoRoomReady}
               onConnected={async (room) => {
                 try {
                   if (consultation?.consultation_id) {
-                    // Persist start; backend will set status=doctor_in_room and started_at, and may store room_id if provided
+                    // Persist start; backend will set status=active and started_at, and may store room_id if provided
                     await markConsultationStarted(consultation.consultation_id, room?.sid || null);
                     // Reflect status locally for smoother UX (no room_sid in schema)
-                    setConsultation((prev) => prev ? { ...prev, status: 'doctor_in_room' } : prev);
+                    setConsultation((prev) => prev ? { ...prev, status: 'active' } : prev);
                     // Persist active consultation for patient to enable guarded menu
                     try {
                       localStorage.setItem('activeConsultationId', consultation.consultation_id);
@@ -853,13 +471,31 @@ function TelemedRoom() {
                 } catch (_) {}
               }}
               onDisconnected={async () => {
+                // ฝั่งแพทย์: สรุปผลและเคลียร์เคส
                 try {
-                  localStorage.removeItem('activeConsultationId');
-                } catch {}
+                  if (isDoctor && consultation?.consultation_id) {
+                    const res = await moveToSummarizing(consultation.consultation_id);
+                    setConsultation((prev) => (res?.consultation ? res.consultation : { ...(prev || {}), status: 'summarizing' }));
+                    try { await endConsultation(consultation.consultation_id); } catch (_) {}
+                    setConsultation(null);
+                    setMatchRequest(null);
+                    loadQueue();
+                  }
+                } catch (_) {}
+                // ฝั่งผู้ป่วย: เคลียร์ flag และ state ทันที
+                try { localStorage.removeItem('activeConsultationId'); } catch {}
+                try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
+                setConsultation(null);
+                setMatchRequest(null);
+                setCaseData(null);
+                setPatientInfo(null);
+                setDoctorInfo(null);
                 if (isPatient) {
-                  if (consultation?.status === 'completed') {
-                    clearPatientTelemedFlags();
-                    return;
+                  const caseId = consultation?.case_id || fallbackCaseId;
+                  if (caseId) {
+                    navigate(`/easy-telemed/matching/${caseId}/wait`, { replace: true });
+                  } else {
+                    navigate('/easy-telemed/illness-case', { replace: true });
                   }
                 }
               }}
@@ -882,160 +518,62 @@ function TelemedRoom() {
             )}
             {consultationReady && isDoctor && (
               <div style={{ padding: 12, borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Space wrap size={8}>
-                  {(() => {
-                    const rawStatus = consultation?.status || (consultationReady ? 'pending' : '');
-                    const normalizedStatus = (() => {
-                      if (rawStatus === 'summarizing') return 'doctor_ready_conclude';
-                      if (rawStatus === 'active') return 'doctor_in_room';
-                      return rawStatus;
-                    })();
-
-                    const controls = [];
-                    const initialCallAllowed = normalizedStatus === 'pending'
-                      || normalizedStatus === 'doctor_ready'
-                      || normalizedStatus === 'doctor_in_room';
-
-                    if (initialCallAllowed) {
-                      controls.push(
-                        <Button
-                          key="call-initial"
-                          type="primary"
-                          onClick={() => emitDoctorReadySignal('ได้ส่งสัญญาณเชิญผู้ป่วยเข้าห้องแล้ว')}
-                        >
-                          โทรหาผู้ป่วย (เชิญเข้าห้อง)
-                        </Button>
-                      );
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    if (!consultation?.consultation_id) {
+                      message.warning('ยังไม่มี consultation');
+                      return;
                     }
-
-                    if (normalizedStatus === 'doctor_in_room') {
-                      controls.push(
-                        <Button
-                          key="pause"
-                          loading={isProcessingSummary}
-                          onClick={handlePauseForSummary}
-                        >
-                          พักสายเพื่อสรุปผล
-                        </Button>
-                      );
-                    }
-
-                    if (normalizedStatus === 'on_hold') {
-                      if (!summaryReady) {
-                        controls.push(
-                          <Button
-                            key="generate-summary"
-                            type="primary"
-                            loading={isProcessingSummary}
-                            onClick={handleCompleteSummary}
-                          >
-                            สร้างเอกสารสรุปผล
-                          </Button>
-                        );
+                    const caseId = consultation?.case_id || caseData?.case_id || fallbackCaseId;
+                    emit?.('doctor:ready', {
+                      requestId: requestId || null,
+                      caseId,
+                      consultation: consultation,
+                    });
+                    message.success('ได้ส่งสัญญาณเรียกผู้ป่วยแล้ว');
+                  }}
+                >
+                  โทรหาผู้ป่วย (เชิญเข้าห้อง)
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!consultation?.consultation_id) return;
+                    try {
+                      const res = await moveToSummarizing(consultation.consultation_id);
+                      // If backend couldn't set DB status due to constraint but indicated clientPhase, reflect it locally
+                      if (res?.consultation) {
+                        setConsultation(res.consultation);
+                      } else if (res?.clientPhase === 'summarizing') {
+                        setConsultation((prev) => ({ ...(prev || {}), status: 'summarizing' }));
                       } else {
-                        controls.push(
-                          <Button
-                            key="summary-call"
-                            type="primary"
-                            loading={isProcessingSummary}
-                            onClick={() => handleStartSummaryCall(false)}
-                          >
-                            โทรแจ้งผลให้ผู้ป่วย
-                          </Button>
-                        );
+                        setConsultation((prev) => ({ ...(prev || {}), status: 'summarizing' }));
                       }
+                      message.success('เข้าสู่ขั้นสรุปผลแล้ว');
+                    } catch (e) {
+                      message.error(e.message || 'ไม่สามารถเข้าสู่ขั้นสรุปผล');
                     }
-
-                    if (normalizedStatus === 'doctor_ready_conclude') {
-                      controls.push(
-                        <Button
-                          key="summary-recall"
-                          type="primary"
-                          loading={isProcessingSummary}
-                          onClick={() => handleStartSummaryCall(true)}
-                        >
-                          โทรแจ้งผลให้ผู้ป่วย
-                        </Button>
-                      );
+                  }}
+                >
+                  ไปขั้นสรุปผล
+                </Button>
+                <Button
+                  danger
+                  onClick={async () => {
+                    if (!consultation?.consultation_id) return;
+                    try {
+                      await endConsultation(consultation.consultation_id);
+                      message.success('ปิดเคสเรียบร้อย');
+                      setConsultation(null);
+                      setMatchRequest(null);
+                      await loadQueue();
+                    } catch (e) {
+                      message.error(e.message || 'ไม่สามารถปิดเคสได้');
                     }
-
-                    if (!summaryReady && normalizedStatus === 'doctor_ready_conclude') {
-                      controls.push(
-                        <Button
-                          key="generate-summary-after"
-                          onClick={handleCompleteSummary}
-                          loading={isProcessingSummary}
-                        >
-                          สร้างเอกสารสรุปผล
-                        </Button>
-                      );
-                    }
-
-                    if (summaryReady && ['doctor_in_room', 'doctor_ready_conclude', 'on_hold', 'active', 'summarizing'].includes(normalizedStatus)) {
-                      controls.push(
-                        <Button
-                          key="awaiting-payment"
-                          danger
-                          loading={isProcessingSummary}
-                          onClick={handleMoveToPayment}
-                        >
-                          ปิดเคส (ส่งต่อให้ชำระเงิน)
-                        </Button>
-                      );
-                    }
-
-                    if (normalizedStatus === 'awaiting_payment') {
-                      controls.push(
-                        <Button key="await" disabled>
-                          รอผู้ป่วยยืนยันการชำระเงิน
-                        </Button>
-                      );
-                      controls.push(
-                        <Button
-                          key="mark-paid"
-                          type="primary"
-                          loading={paymentProcessing}
-                          onClick={handlePatientPaid}
-                        >
-                          บันทึกว่าชำระเงินแล้ว
-                        </Button>
-                      );
-                    }
-
-                    if (normalizedStatus === 'cancel_by_error') {
-                      controls.push(
-                        <Button
-                          key="error"
-                          danger
-                          onClick={() => navigate('/easy-telemed/home', { replace: true })}
-                        >
-                          ออกจากห้อง (ระบบขัดข้อง)
-                        </Button>
-                      );
-                    }
-
-                    if (normalizedStatus === 'completed') {
-                      controls.push(
-                        <Button
-                          key="completed"
-                          onClick={() => navigate('/easy-telemed/home', { replace: true })}
-                        >
-                          กลับหน้าแรก
-                        </Button>
-                      );
-                    }
-
-                    if (controls.length === 0) {
-                      controls.push(
-                        <Button key="noop" disabled>
-                          ไม่มีการกระทำที่ต้องทำในขณะนี้
-                        </Button>
-                      );
-                    }
-
-                    return controls;
-                  })()}
-                </Space>
+                  }}
+                >
+                  ปิดเคสและล้างหน้าจอ
+                </Button>
               </div>
             )}
           </Card>
@@ -1086,22 +624,14 @@ function TelemedRoom() {
                 )}
               </Card>
             )}
-            {!consultationReady || isOnHoldStatus || isAwaitingPaymentStatus || isCompletedStatus ? (
-              <Card size="small">
-                <Paragraph>
-                  {(() => {
-                    if (!consultationReady) return 'ระบบแชทจะพร้อมใช้งานหลังจากสร้าง consultation แล้ว';
-                    if (isOnHoldStatus) return 'แพทย์พักสายเพื่อสรุปผล ชั่วคราวไม่สามารถใช้งานแชท';
-                    if (isAwaitingPaymentStatus) return 'อยู่ระหว่างดำเนินการชำระเงิน';
-                    if (isCompletedStatus) return 'การปรึกษาเสร็จสิ้น';
-                    return 'ไม่พร้อมใช้งาน';
-                  })()}
-                </Paragraph>
-              </Card>
-            ) : (
+            {consultationReady && consultation?.status !== 'summarizing' ? (
               <TelemedChat consultationId={consultation.consultation_id} currentUser={user} />
+            ) : (
+              <Card size="small">
+                <Paragraph>{consultation?.status === 'summarizing' ? 'กำลังสรุปผล' : 'ระบบแชทจะพร้อมใช้งานหลังจากสร้าง consultation แล้ว'}</Paragraph>
+              </Card>
             )}
-            {consultationReady && isDoctor && (isOnHoldStatus || isSummarizingStatus) ? (
+            {consultationReady && isDoctor && consultation?.status === 'summarizing' ? (
               <DoctorSummary consultationId={consultation.consultation_id} doctorId={doctorInfo?.user_id || user?.user_id} />
             ) : consultationReady ? (
               <TelemedNotes
@@ -1114,19 +644,6 @@ function TelemedRoom() {
                 <Paragraph>
                   บันทึกจากแพทย์จะแสดงหลังจากเปิด consultation
                 </Paragraph>
-              </Card>
-            )}
-            {summaryReady && (
-              <Card size="small" title="เอกสารสรุปผล">
-                <Space direction="vertical">
-                  {summaryDocuments?.summary_pdf?.public_url ? (
-                    <a href={summaryDocuments.summary_pdf.public_url} target="_blank" rel="noreferrer">
-                      ดาวน์โหลดสรุปผล (PDF)
-                    </a>
-                  ) : (
-                    <Paragraph>ไฟล์ถูกสร้างแล้ว แต่ยังไม่พร้อมให้ดาวน์โหลด</Paragraph>
-                  )}
-                </Space>
               </Card>
             )}
           </div>

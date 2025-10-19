@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { List, Tag, Space, Button, Typography, Skeleton, Empty, Popconfirm, message } from 'antd';
 import { supabase } from '../../api/SupabaseClient';
 import { CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons';
-import { useTranslation } from 'react-i18next';
 
 const { Text } = Typography;
 
@@ -14,7 +13,6 @@ const { Text } = Typography;
 */
 
 function DoctorRequestList({ onProcessed, setRequestList, requestCount }) {
-  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
   const [processingId, setProcessingId] = useState(null);
@@ -31,7 +29,7 @@ const { data, error } = await supabase
   .order('created_at', { ascending: false });
 
 if (error) {
-  message.error(t('doctorRequests.fetchListError'));
+  message.error('Failed to load applications');
 } else {
   setItems(data ?? []);
 }
@@ -73,12 +71,12 @@ if (error) {
         throw requestError;
       }
 
-      message.success(status === 'approved' ? t('doctorRequests.approveSuccess') : t('doctorRequests.rejectSuccess'));
+      message.success(status === 'approved' ? 'Approved' : 'Rejected');
       onProcessed?.();
       fetchRequests();
     } catch (error) {
       console.error('Failed to update doctor request status', error);
-      message.error(t('doctorRequests.updateFailed'));
+      message.error('Update failed');
     } finally {
       setProcessingId(null);
     }
@@ -95,7 +93,7 @@ if (error) {
   }
 
   if (!items.length) {
-    return <Empty description={t('doctorRequests.emptyState')} image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+    return <Empty description="No pending requests" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   }
 
 
@@ -103,10 +101,9 @@ if (error) {
   return (
     <div>
       <Space style={{ marginBottom: 12 }}>
-        <Button icon={<ReloadOutlined />} onClick={fetchRequests}>{t('doctorRequests.refresh')}</Button>
-        <Text type="secondary">
-          {t('doctorRequests.pendingSummary', { unverified: requestCount, pending: items.length })}
-        </Text>
+        <Button icon={<ReloadOutlined />} onClick={fetchRequests}>Refresh</Button>
+        <Text type="secondary">Unverify : {requestCount} | Pending Requests: {items.length} </Text>
+        
       </Space>
       <List
         itemLayout="vertical"
@@ -117,11 +114,11 @@ if (error) {
             actions={[
               <Popconfirm
                 key="approve"
-                title={t('doctorRequests.approveConfirmTitle')}
-                description={t('doctorRequests.approveConfirmDescription')}
+                title="Approve doctor"
+                description="Are you sure you want to approve this application?"
                 onConfirm={() => handleApprove(item.user_id)}
-                okText={t('common.yes')}
-                cancelText={t('common.no')}
+                okText="Yes"
+                cancelText="No"
               >
                 <Button
                   type="primary"
@@ -129,16 +126,16 @@ if (error) {
                   loading={processingId === item.user_id}
                   disabled={processingId === item.user_id}
                 >
-                  {t('common.approve')}
+                  Approve
                 </Button>
               </Popconfirm>,
               <Popconfirm
                 key="reject"
-                title={t('doctorRequests.rejectConfirmTitle')}
-                description={t('doctorRequests.rejectConfirmDescription')}
+                title="Reject doctor"
+                description="Are you sure you want to reject this application?"
                 onConfirm={() => handleReject(item.user_id)}
-                okText={t('common.yes')}
-                cancelText={t('common.no')}
+                okText="Yes"
+                cancelText="No"
               >
                 <Button
                   danger
@@ -146,7 +143,7 @@ if (error) {
                   loading={processingId === item.user_id}
                   disabled={processingId === item.user_id}
                 >
-                  {t('common.reject')}
+                  Reject
                 </Button>
               </Popconfirm>,
             ]}
@@ -154,22 +151,22 @@ if (error) {
             <List.Item.Meta
               title={
                 <Space size="small">
-                  <span>{item.full_name || item.display_name || t('doctorRequests.unknownDoctor')}</span>
+                  <span>{item.full_name || item.display_name || 'Unknown Doctor'}</span>
                   <Tag color="blue">{item.email}</Tag>
                 </Space>
               }
               description={
                 <Space direction="vertical" size={4}>
                   {item.license_no && (
-                    <Text type="secondary">{t('doctorRequests.licenseLabel', { license: item.license_no })}</Text>
+                    <Text type="secondary">License: {item.license_no}</Text>
                   )}
                   <Text type="secondary">
-                    {t('doctorRequests.submittedLabel', { date: new Date(item.created_at).toLocaleString() })}
+                    Submitted: {new Date(item.created_at).toLocaleString()}
                   </Text>
                 </Space>
               }
             />
-            {item.status && <Tag color="gold">{t('doctorRequests.statusLabel', { status: item.status })}</Tag>}
+            {item.status && <Tag color="gold">Status: {item.status}</Tag>}
           </List.Item>
         )}
       />

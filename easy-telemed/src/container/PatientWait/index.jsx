@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Card, Steps, Button, Space, Typography, Tag, message, Alert, Spin } from "antd";
@@ -10,47 +10,17 @@ import specializations from "../../specialization.json";
 
 const { Title, Paragraph, Text } = Typography;
 
-const CLOSED_CONSULTATION_STATUSES = new Set(['completed', 'canceled', 'cancel_by_error']);
-
 const STATUS_STEPS = [
   { key: "waiting", label: "รอแพทย์ตอบรับ" },
   { key: "offered", label: "ส่งคำขอไปยังแพทย์" },
   { key: "accepted", label: "แพทย์ตอบรับ" },
-  { key: "doctor_ready", label: "แพทย์กำลังเรียกเข้าห้อง" },
-  { key: "doctor_in_room", label: "อยู่ในห้องปรึกษา" },
-  { key: "doctor_on_hold", label: "แพทย์กำลังเตรียมสรุปผล" },
-  { key: "doctor_ready_conclude", label: "แพทย์โทรแจ้งสรุปผล" },
-  { key: "awaiting_payment", label: "รอชำระเงิน" },
-  { key: "cancel_by_error", label: "การปรึกษาถูกยกเลิก (ระบบขัดข้อง)" },
-  { key: "completed", label: "เสร็จสิ้น" },
+  { key: "doctor_ready", label: "แพทย์พร้อมเข้าพูดคุย" },
+  { key: "doctor_summarizing", label: "แพทย์กำลังสรุปผล" },
 ];
 
 const getStepIndex = (status) => {
   const index = STATUS_STEPS.findIndex((step) => step.key === status);
   return index === -1 ? 0 : index;
-};
-
-const mapConsultationStatusToPatientStatus = (status) => {
-  switch (status) {
-    case 'doctor_in_room':
-    case 'active':
-      return 'doctor_in_room';
-    case 'on_hold':
-      return 'doctor_on_hold';
-    case 'doctor_ready_conclude':
-    case 'summarizing':
-      return 'doctor_ready_conclude';
-    case 'awaiting_payment':
-      return 'awaiting_payment';
-    case 'cancel_by_error':
-      return 'cancel_by_error';
-    case 'completed':
-      return 'completed';
-    case 'pending':
-      return 'doctor_ready';
-    default:
-      return null;
-  }
 };
 
 const resolveSpecialty = (caseRow, fallback) => {
@@ -85,17 +55,10 @@ function PatientWait() {
   const [doctorInfo, setDoctorInfo] = useState(null);
   const [currentStatus, setCurrentStatus] = useState(location.state?.mode ? "waiting" : matchRequest?.status || "waiting");
   const [consultation, setConsultation] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [calling, setCalling] = useState(false);
 
   const requestId = location.state?.requestId || params.requestId || matchRequest?.request_id;
-  const hasPrefilledContext = Boolean(location.state?.matchRequest || location.state?.caseData);
-
-  useEffect(() => {
-    if (hasPrefilledContext) {
-      setLoading(false);
-    }
-  }, [hasPrefilledContext]);
 
   // Show steps only when this context belongs to the signed-in patient
   const showSteps = useMemo(() => {
@@ -156,35 +119,23 @@ function PatientWait() {
   // Fallback: on refresh without state, derive context from consultations for this user
   useEffect(() => {
     (async () => {
-      if (matchRequest || requestId) {
-        return;
-      }
-      if (!user?.user_id) {
-        return;
-      }
-      setLoading(true);
+      if (matchRequest || requestId) return;
+      if (!user?.user_id) return;
       try {
         // Try latest active consultation for this patient
         const { data: consult } = await supabase
           .from('consultations')
           .select('*')
           .eq('patient_id', user.user_id)
-          .in('status', ['pending', 'doctor_in_room', 'on_hold', 'doctor_ready_conclude', 'summarizing', 'awaiting_payment', 'active'])
+          .in('status', ['pending', 'active'])
           .order('created_at', { ascending: false })
           .maybeSingle();
         if (consult) {
           setConsultation(consult);
-          if (consult.status === 'doctor_ready_conclude' || consult.status === 'summarizing') {
-            setCurrentStatus('doctor_ready_conclude');
-          } else if (consult.status === 'on_hold') {
-            setCurrentStatus('doctor_on_hold');
-          } else if (consult.status === 'doctor_in_room' || consult.status === 'active') {
-            setCurrentStatus('doctor_in_room');
-          } else if (consult.status === 'awaiting_payment') {
-            setCurrentStatus('awaiting_payment');
-          } else if (consult.status === 'completed') {
-            setCurrentStatus('completed');
+          if (consult.status === 'summarizing') {
+            setCurrentStatus('doctor_summarizing');
           } else {
+                  // pending or active -> doctor is ready to talk
             setCurrentStatus('doctor_ready');
           }
           // Load case and latest match for the case
@@ -242,8 +193,6 @@ function PatientWait() {
         }
       } catch (_) {
         // silent fallback
-      } finally {
-        setLoading(false);
       }
     })();
   }, [matchRequest, requestId, user?.user_id, initialSpecialty]);
@@ -290,8 +239,9 @@ function PatientWait() {
 
       if (!error && data) {
         setConsultation(data);
-        const mappedStatus = mapConsultationStatusToPatientStatus(data.status);
-        if (mappedStatus) setCurrentStatus(mappedStatus);
+        if (data.status === 'summarizing') {
+          setCurrentStatus('doctor_summarizing');
+        }
       }
     };
 
@@ -301,8 +251,8 @@ function PatientWait() {
   // Fallback polling: check consultation every 10s while waiting
   useEffect(() => {
     if (!matchRequest?.case_id) return undefined;
-    // Do not promote to in-room states from polling alone; rely on explicit doctor:ready invite
-    if (consultation && ['doctor_ready', 'doctor_in_room'].includes(currentStatus)) return undefined;
+    // Do not promote to doctor_ready from polling alone; rely on explicit doctor:ready invite
+    if (consultation && currentStatus === 'doctor_ready') return undefined;
     const id = setInterval(async () => {
       try {
         const { data } = await supabase
@@ -313,8 +263,7 @@ function PatientWait() {
           .maybeSingle();
         if (data) {
           setConsultation(data);
-          const mappedStatus = mapConsultationStatusToPatientStatus(data.status);
-          if (mappedStatus) setCurrentStatus(mappedStatus);
+          // keep status unchanged; wait for doctor:ready signal
         }
       } catch (_) {}
     }, 10000);
@@ -326,24 +275,7 @@ function PatientWait() {
     const unsubscribe = subscribeMatchRequest(requestId, (data) => {
       if (!data) return;
       setMatchRequest(data);
-      const requestStatus = data.status || "waiting";
-
-      setCurrentStatus(prev => {
-        // Preserve richer consultation-driven statuses once user is in-room or beyond
-        const stickyStatuses = new Set([
-          'doctor_in_room',
-          'doctor_on_hold',
-          'doctor_ready_conclude',
-          'awaiting_payment',
-          'cancel_by_error',
-          'completed',
-        ]);
-        if (stickyStatuses.has(prev)) {
-          return prev;
-        }
-        // Otherwise allow match request status to drive UI
-        return requestStatus;
-      });
+      setCurrentStatus(data.status || "waiting");
     });
     return unsubscribe;
   }, [requestId]);
@@ -360,21 +292,11 @@ function PatientWait() {
       const sameRequest = payload?.requestId && requestId && payload.requestId === requestId;
       const sameCase = payload?.caseId && matchRequest?.case_id && payload.caseId === matchRequest.case_id;
       if (sameRequest || belongsToUser || sameCase) {
-        const statusFromPayload = mapConsultationStatusToPatientStatus(payload?.consultation?.status);
-        const nextStatus = statusFromPayload || "doctor_ready";
-        setCurrentStatus(nextStatus);
+        setCurrentStatus("doctor_ready");
         if (payload.consultation) {
           setConsultation(payload.consultation);
         }
-        if (nextStatus === 'doctor_ready_conclude') {
-          message.success('แพทย์กำลังสรุปผลและจะติดต่อกลับในไม่ช้า');
-        } else if (nextStatus === 'doctor_on_hold') {
-          message.info('แพทย์กำลังเตรียมสรุปผล');
-        } else if (nextStatus === 'cancel_by_error') {
-          message.error('การปรึกษาถูกยกเลิกเนื่องจากระบบขัดข้อง กรุณาลองใหม่อีกครั้ง');
-        } else {
-          message.success(t("DOCTOR_READY", "แพทย์พร้อมให้บริการแล้ว"));
-        }
+        message.success(t("DOCTOR_READY", "แพทย์พร้อมให้บริการแล้ว"));
         // นำผู้ป่วยเข้าห้อง telemed อัตโนมัติเมื่อแพทย์โทรหา
         const consultId = payload?.consultation?.consultation_id;
         const caseId = payload?.caseId || matchRequest?.case_id;
@@ -389,66 +311,42 @@ function PatientWait() {
     };
 
     socket.on("doctor:ready", handleDoctorReady);
-    const handleConsultationUpdated = (payload) => {
-      if (!payload?.consultationId || !payload?.status) return;
-      if (consultation?.consultation_id && payload.consultationId !== consultation.consultation_id) return;
-      const mappedStatus = mapConsultationStatusToPatientStatus(payload.status);
-      if (mappedStatus) {
-        setCurrentStatus(mappedStatus);
-        if (mappedStatus === 'doctor_on_hold') {
-          message.info('แพทย์กำลังเตรียมสรุปผล');
-        } else if (mappedStatus === 'doctor_ready_conclude') {
-          message.success('แพทย์กำลังสรุปผลและจะติดต่อกลับในไม่ช้า');
-        } else if (mappedStatus === 'awaiting_payment') {
-          message.success('กรุณาดำเนินการชำระเงินตามที่ได้รับแจ้ง');
-        } else if (mappedStatus === 'completed') {
-          message.success('การปรึกษาเสร็จสิ้น');
-        } else if (mappedStatus === 'cancel_by_error') {
-          message.error('การปรึกษาถูกยกเลิกเนื่องจากระบบขัดข้อง กรุณาลองใหม่อีกครั้ง');
-        }
-      }
-      if (payload.consultationId) {
-        setConsultation((prev) => (prev ? { ...prev, status: payload.status } : prev));
+    const handleSummarizing = (payload) => {
+      if (payload?.consultationId && consultation?.consultation_id === payload.consultationId) {
+        setCurrentStatus('doctor_summarizing');
+        message.info('แพทย์กำลังสรุปผล');
       }
     };
-    socket.on('consultation:updated', handleConsultationUpdated);
+    socket.on("consultation:summarizing", handleSummarizing);
+
+    const handleEnded = (payload) => {
+      if (payload?.consultationId && consultation?.consultation_id === payload.consultationId) {
+        // เมื่อแพทย์ปิดเคส ให้ล้างสถานะห้องและกลับสู่โหมดรอเคสใหม่
+        try { localStorage.removeItem('activeConsultationId'); } catch {}
+        setConsultation(null);
+        setCurrentStatus('waiting');
+        message.success('การปรึกษาสิ้นสุดแล้ว');
+      }
+    };
+    socket.on("consultation:ended", handleEnded);
 
     return () => {
       socket.off("doctor:ready", handleDoctorReady);
-      socket.off('consultation:updated', handleConsultationUpdated);
+      socket.off("consultation:summarizing", handleSummarizing);
+      socket.off("consultation:ended", handleEnded);
     };
   }, [socket, requestId, t, consultation?.consultation_id, navigate, matchRequest?.case_id]);
 
   const stepIndex = useMemo(() => getStepIndex(currentStatus), [currentStatus]);
 
   // ถ้ายังไม่มีคำขอและไม่มี consultation ของผู้ใช้ แสดงฟอร์มจองปกติในหน้านี้เลย
-  const hasStoredTelemedSession = useCallback(() => {
-    try {
-      return (
-        localStorage.getItem('patientInvitedConsultationId') ||
-        localStorage.getItem('activeConsultationId')
-      );
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const restoreStoredStatus = useCallback(() => {
-    try {
-      return localStorage.getItem('patientTelemedStatus') || null;
-    } catch {
-      return null;
-    }
-  }, []);
-
   const shouldShowInlineForm = useMemo(() => {
     const uid = user?.user_id;
     if (!uid) return false;
     const belongs = (caseData?.patient_id === uid) || (consultation?.patient_id === uid);
     if (belongs) return false; // มีของตัวเองแล้ว ไม่ต้องแสดงฟอร์มใหม่
-    if (hasStoredTelemedSession()) return false;
     return !loading && !matchRequest && !consultation;
-  }, [user?.user_id, caseData?.patient_id, consultation?.patient_id, loading, matchRequest, consultation, currentStatus, hasStoredTelemedSession]);
+  }, [user?.user_id, caseData?.patient_id, consultation?.patient_id, loading, matchRequest, consultation]);
 
   // ถ้าผู้ใช้ยังไม่ได้ส่งคำขอ พาไปหน้าแบบฟอร์มหลัก (PatientOnCase) ให้เหมือนภาพตัวอย่าง
   useEffect(() => {
@@ -461,21 +359,9 @@ function PatientWait() {
     }
   }, [shouldShowInlineForm, navigate, user?.user_id]);
 
-  useEffect(() => {
-    if (currentStatus !== 'waiting') return;
-    const stored = restoreStoredStatus();
-    if (stored && stored !== currentStatus) {
-      setCurrentStatus(stored);
-    }
-  }, [currentStatus, restoreStoredStatus]);
-
   const handleJoinTelemed = () => {
     if (!consultation?.consultation_id) {
       message.error(t("CONSULTATION_NOT_READY", "ยังไม่สามารถเข้าห้องได้ กรุณารอสักครู่"));
-      return;
-    }
-    if (consultation.status && CLOSED_CONSULTATION_STATUSES.has(consultation.status)) {
-      message.warning(t('CONSULTATION_CLOSED', 'ไม่สามารถเข้าห้องได้เนื่องจากการปรึกษาสิ้นสุดแล้ว'));
       return;
     }
     setCalling(true);
@@ -527,13 +413,7 @@ function PatientWait() {
               <Alert
                 message={t("REQUEST_STATUS", "สถานะคำขอ")}
                 description={t(currentStatus.toUpperCase(), currentStatus)}
-                type={
-                  ["accepted", "doctor_ready", "doctor_in_room", "doctor_ready_conclude"].includes(currentStatus)
-                    ? "success"
-                    : currentStatus === "cancel_by_error"
-                    ? "error"
-                    : "info"
-                }
+                type={currentStatus === "accepted" || currentStatus === "doctor_ready" ? "success" : "info"}
                 showIcon
               />
 
@@ -556,23 +436,24 @@ function PatientWait() {
                 </div>
               )}
 
-              {['doctor_ready', 'doctor_in_room', 'doctor_ready_conclude'].includes(currentStatus) && consultation && (
+              {currentStatus === 'doctor_ready' && consultation && (
                 <Alert
                   style={{ marginTop: 8 }}
                   type="success"
                   showIcon
-                  message={t("CONSULTATION_READY", "หากแพทย์โทรหา โปรดเตรียมกล้อง/ไมโครโฟนให้พร้อม")}
-                  description="เมื่อได้รับสาย คุณจะเข้าสู่หน้าเตรียมกล้องเพื่อกดยืนยันเข้าห้องโดยอัตโนมัติ"
+                  message={t("CONSULTATION_READY", "เตรียมเข้าห้องปรึกษาผ่านวิดีโอคอล")}
                 />
               )}
-              {currentStatus === 'cancel_by_error' && (
-                <Alert
-                  style={{ marginTop: 8 }}
-                  type="error"
-                  showIcon
-                  message="การปรึกษาถูกยกเลิกเนื่องจากระบบขัดข้อง กรุณาติดต่อเจ้าหน้าที่หรือเริ่มคำขอใหม่"
-                />
-              )}
+
+              <Button
+                type="primary"
+                size="large"
+                disabled={!consultation || currentStatus !== "doctor_ready"}
+                loading={calling}
+                onClick={handleJoinTelemed}
+              >
+                {t("JOIN_TELEMED_BUTTON", "เข้าห้อง Telemed")}
+              </Button>
             </Space>
             ) : loading ? (
               <Spin />

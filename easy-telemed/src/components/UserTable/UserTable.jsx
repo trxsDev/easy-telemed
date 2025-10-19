@@ -1,25 +1,25 @@
 import React from 'react'
-import { Table } from 'antd'
-import { useTranslation } from 'react-i18next'
+import {Table} from 'antd'
+import { CheckOutlined } from "@ant-design/icons";
+import { Button ,Space,Popconfirm} from 'antd';
 
 function UserTable({userData}) {
-    const { t } = useTranslation()
     const columns = [
     {
-      title: t('userTable.noColumn'),
+      title: "No",
       key: "no",
       render: (_, __, index) => index + 1,
       width: "20%",
     },
     {
-      title: t('userTable.fullNameColumn'),
+      title: "Full Name",
       dataIndex: "all_user_display_name",
       key: "full_name",
-      render: (text) => text || t('common.notAvailable'),
+      render: (text) => text || "N/A",
       width: "20%",
     },
     {
-      title: t('userTable.emailColumn'),
+      title: "Email",
       dataIndex: "all_user_email",
       key: "email",
       width: "20%",

@@ -73,8 +73,6 @@ function SignInForm() {
             type="text"
             icon={<ChevronLeft />}
             onClick={() => navigate("/")}
-            aria-label={t("auth.signIn.backButton")}
-            title={t("auth.signIn.backButton")}
             style={{
               position: "absolute",
               left: 8,
@@ -102,7 +100,7 @@ function SignInForm() {
               {t("SIGNIN_GREETING") || "Welcome Back!"}
             </Typography.Title>
             <Typography.Text type="secondary">
-              {t("auth.signIn.subtitle")}
+              Please sign in to your account
             </Typography.Text>
           </div>
 
@@ -112,17 +110,17 @@ function SignInForm() {
             <Form.Item
               label={
                 <span style={{ fontSize: "14px", fontWeight: "500" }}>
-                  {t("EMAIL_ADDRESS", "Email Address")}
+                  Email Address
                 </span>
               }
               name="username"
               rules={[
-                { required: true, message: t("auth.signIn.emailRequired") },
-                { type: "email", message: t("auth.signIn.emailInvalid") },
+                { required: true, message: "Please input your email!" },
+                { type: "email", message: "Please enter a valid email!" },
               ]}
             >
               <Input
-                placeholder={t("EMAIL_INPUT_REQUIRED", "Enter your email")}
+                placeholder="Enter your email"
                 size="large"
                 style={{ borderRadius: "8px" }}
                 onChange={(e) => setEmail(e.target.value)}
@@ -132,16 +130,16 @@ function SignInForm() {
             <Form.Item
               label={
                 <span style={{ fontSize: "14px", fontWeight: "500" }}>
-                  {t("PASSWORD", "Password")}
+                  Password
                 </span>
               }
               name="password"
               rules={[
-                { required: true, message: t("auth.signIn.passwordRequired") },
+                { required: true, message: "Please input your password!" },
               ]}
             >
               <Input.Password
-                placeholder= {t("PASSWORD", "Password")}
+                placeholder="Enter your password"
                 size="large"
                 style={{ borderRadius: "8px" }}
                 onChange={(e) => setPassword(e.target.value)}
@@ -164,13 +162,13 @@ function SignInForm() {
                   fontWeight: "500",
                 }}
               >
-                {t("auth.signIn.submit")}
+                Sign In
               </Button>
             </Form.Item>
           </Form>
           <div style={{ textAlign: "center" }}>
             <Typography.Text type="secondary">
-              {t("auth.signIn.noAccountPrompt")}{" "}
+              Don't have an account?{" "}
               <Link
                 to="/signup"
                 style={{
@@ -179,7 +177,7 @@ function SignInForm() {
                   textDecoration: "none",
                 }}
               >
-                {t("auth.signIn.createAccountLink")}
+                Create Account
               </Link>
             </Typography.Text>
           </div>

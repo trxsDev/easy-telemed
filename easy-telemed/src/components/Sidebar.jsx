@@ -17,12 +17,10 @@ import medcross from "../assets/medcross.svg";
 import { Popconfirm } from "antd";
 import ChangeLangButton from "./ChangeLangButton";
 import React from "react";
-import { useTranslation } from "react-i18next";
 import { supabase } from "../api/SupabaseClient";
 import { useSocket } from "../context/SocketContext.jsx";
 
 export default function Sidebar() {
-  const { t } = useTranslation();
   const navigate = useNavigate();
   const { logOut, role, verify, authUser } = useUserAuthSupabase();
   const { socket } = useSocket();
@@ -59,25 +57,28 @@ export default function Sidebar() {
           setPatientTelemedEnabled(true);
         }
       };
-      const onConsultationUpdated = (payload = {}) => {
-        const status = payload?.status;
-        if (!status) return;
-        if (status === 'doctor_in_room' || status === 'doctor_ready_conclude' || status === 'active' || status === 'summarizing') {
-          setPatientTelemedEnabled(true);
-        } else {
+      const onSummarizing = (payload) => {
+        if (payload?.patientId === authUser?.user_id || payload?.consultation?.patient_id === authUser?.user_id) {
+          setPatientTelemedEnabled(false); // hide after call finished/summarizing
+          try { localStorage.removeItem('activeConsultationId'); } catch {}
+          try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
+        }
+      };
+      const onEnded = (payload) => {
+        if (payload?.patientId === authUser?.user_id || payload?.consultation?.patient_id === authUser?.user_id) {
           setPatientTelemedEnabled(false);
           try { localStorage.removeItem('activeConsultationId'); } catch {}
-          if (status !== 'doctor_ready_conclude' && status !== 'summarizing') {
-            try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
-          }
+          try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
         }
       };
       socket.on?.('doctor:ready', onDoctorReady);
-      socket.on?.('consultation:updated', onConsultationUpdated);
+      socket.on?.('consultation:summarizing', onSummarizing);
+      socket.on?.('consultation:ended', onEnded);
       return () => {
         mounted = false;
         socket.off?.('doctor:ready', onDoctorReady);
-        socket.off?.('consultation:updated', onConsultationUpdated);
+        socket.off?.('consultation:summarizing', onSummarizing);
+        socket.off?.('consultation:ended', onEnded);
         window.removeEventListener('storage', onStorage);
       };
     }
@@ -99,52 +100,52 @@ export default function Sidebar() {
     {
       to: "/easy-telemed/home",
       icon: <Home size={24} />,
-      labelKey: "sidebar.menu.home",
+      label: "Home",
       roles: ["admin", "doctor", "patient"],
     },
     {
       to: "/easy-telemed/illness-case",
       icon: <PersonStanding size={24} />,
-      labelKey: "sidebar.menu.illnessCase",
+      label: "Illness Case",
       roles: ["patient"],
     },
     {
       to: "/easy-telemed/telemedroom",
       icon: <FileVideoCamera size={24} />,
-      labelKey: "sidebar.menu.telemedRoom",
+      label: "Telemed Room",
       roles: ["admin", "doctor", "patient"],
       patientGuard: true,
     },
     {
       to: "/easy-telemed/register",
       icon: <BookUser size={24} />,
-      labelKey: "sidebar.menu.register",
+      label: "Register",
       roles: ["admin"],
     },
     {
       to: "/easy-telemed/onboarding/doctor",
       icon: <NotebookPen size={24} />,
-      labelKey: "sidebar.menu.doctorPending",
+      label: "Doctor Pending",
       roles: ["doctor"],
       requireUnverified: true,
     },
     {
       to: "/easy-telemed/userDashboard",
       icon: <Users size={24} />,
-      labelKey: "sidebar.menu.userManagement",
+      label: "User Management",
       roles: ["admin"],
     },
     {
       to: "/easy-telemed/profile",
       icon: <CircleUserRound size={24} />,
-      labelKey: "sidebar.menu.profile",
+      label: "Profile",
       roles: ["patient"],
       requireUnverified: true,
     },
     {
       to: "/easy-telemed/doctor/schedule",
       icon: <CalendarClock size={24} />,
-      labelKey: "sidebar.menu.doctorSchedule",
+      label: "Doctor Schedule",
       roles: ["doctor"],
     },
   ];
@@ -188,30 +189,27 @@ export default function Sidebar() {
     <aside className="sidebar">
       <div className="rail">
         <div className="sidebar-logo">
-          <img src={medcross} alt={t("sidebar.brandIconAlt")} />
+          <img src={medcross} alt="Logo" />
         </div>
         <Divider style={{ margin: 0 }} />
         {/* ===== เมนูหลัก ===== */}
         <nav className="menu">
-          {menus.map((item) => {
-            const label = t(item.labelKey);
-            return (
-              <div key={item.to}>
-                <NavLink
-                  to={item.to}
-                  end={item.to === "/"}
-                  title={label}
-                  aria-label={label}
-                  className={({ isActive }) =>
-                    `menu-item ${isActive ? "active" : ""}`
-                  }
-                >
-                  {item.icon}
-                </NavLink>
-                {item.divider && <Divider />}
-              </div>
-            );
-          })}
+          {menus.map((item) => (
+            <div key={item.to}>
+              <NavLink
+                to={item.to}
+                end={item.to === "/"}
+                title={item.label}
+                aria-label={item.label}
+                className={({ isActive }) =>
+                  `menu-item ${isActive ? "active" : ""}`
+                }
+              >
+                {item.icon}
+              </NavLink>
+              {item.divider && <Divider />}
+            </div>
+          ))}
         </nav>
 
         {/* ===== ปุ่ม Logout แยกออกมา ===== */}
@@ -220,16 +218,16 @@ export default function Sidebar() {
 
           <Popconfirm
             placement="right"
-            title={t("sidebar.signOutConfirm")}
-            okText={t("common.yes")}
-            cancelText={t("common.no")}
+            title="Are you sure to sign out?"
+            okText="Yes"
+            cancelText="No"
             onConfirm={handleSignOut}
           >
             <button
               type="submit"
               className="menu-item"
-              title={t("sidebar.signOut")}
-              aria-label={t("sidebar.signOut")}
+              title="signout"
+              aria-label="signout"
               style={{ background: "none", border: "none", cursor: "pointer" }}
             >
               <LogOut size={24} />

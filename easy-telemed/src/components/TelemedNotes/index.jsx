@@ -1,13 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Card, Button, Input, List, message, Typography, Empty } from "antd";
-import { useTranslation } from "react-i18next";
 import { supabase } from "../../api/SupabaseClient";
 
 const { TextArea } = Input;
 const { Text } = Typography;
 
 function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
-  const { t } = useTranslation();
   const [notes, setNotes] = useState([]);
   const [noteText, setNoteText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,7 +20,7 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
 
     if (error) {
       console.error("Failed to fetch notes", error);
-      message.error(t("telemedNotes.loadError"));
+      message.error("ไม่สามารถโหลดบันทึกได้");
       return;
     }
     setNotes(data || []);
@@ -55,11 +53,11 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
 
   const handleSave = async () => {
     if (!consultationId || !doctorId) {
-      message.error(t("telemedNotes.missingContextError"));
+      message.error("ไม่พบข้อมูลสำหรับบันทึก note");
       return;
     }
     if (!noteText.trim()) {
-      message.warning(t("telemedNotes.emptyNoteWarning"));
+      message.warning("กรุณากรอกข้อความ note");
       return;
     }
 
@@ -77,7 +75,7 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
       fetchNotes();
     } catch (error) {
       console.error("Failed to save note", error);
-      message.error(t("telemedNotes.saveError"));
+      message.error("บันทึก note ไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
@@ -85,8 +83,8 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
 
   return (
     <Card
-      title={t("telemedNotes.cardTitle")}
-      extra={<Text type="secondary">{t("telemedNotes.cardSubtitle")}</Text>}
+      title="บันทึกจากแพทย์"
+      extra={<Text type="secondary">note จะถูกเก็บไว้สำหรับการสรุปหลังการปรึกษา</Text>}
       size="small"
       style={{ height: "100%" }}
     >
@@ -94,7 +92,7 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
         <div style={{ marginBottom: 16 }}>
           <TextArea
             rows={4}
-            placeholder={t("telemedNotes.inputPlaceholder")}
+            placeholder="จดบันทึกเพิ่มเติมระหว่างการปรึกษา..."
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
           />
@@ -104,7 +102,7 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
             loading={loading}
             style={{ marginTop: 8 }}
           >
-            {t("telemedNotes.saveButton")}
+            บันทึก note
           </Button>
         </div>
       )}
@@ -112,7 +110,7 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
       <List
         size="small"
         dataSource={notes}
-        locale={{ emptyText: <Empty description={t("telemedNotes.emptyState")} /> }}
+        locale={{ emptyText: <Empty description="ยังไม่มีบันทึก" /> }}
         renderItem={(item) => (
           <List.Item key={item.note_id}>
             <List.Item.Meta
