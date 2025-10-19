@@ -80,6 +80,136 @@ router.post('/:consultationId/summarize', async (req, res) => {
   }
 });
 
+const emitConsultationUpdate = async (consultation) => {
+  try {
+    if (!consultation?.case_id) return;
+    const { data: caseRow } = await supabase
+      .from('patient_cases')
+      .select('patient_id')
+      .eq('case_id', consultation.case_id)
+      .maybeSingle();
+    const patientId = caseRow?.patient_id;
+    if (patientId) {
+      emitToUser(patientId, 'consultation:updated', {
+        consultationId: consultation.consultation_id,
+        status: consultation.status,
+      });
+    }
+  } catch (e) {
+    console.warn('Failed to emit consultation update', e?.message || e);
+  }
+};
+
+router.post('/:consultationId/pause', async (req, res) => {
+  try {
+    const { consultationId } = req.params;
+    if (!consultationId) return res.status(400).json({ error: 'Missing consultationId' });
+
+    const updates = {
+      status: 'on_hold',
+      on_hold_at: new Date().toISOString(),
+    };
+
+    const { data: updated, error } = await supabase
+      .from('consultations')
+      .update(updates)
+      .eq('consultation_id', consultationId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+
+    await emitConsultationUpdate(updated);
+
+    return res.json({ ok: true, consultation: updated });
+  } catch (e) {
+    console.error('pause consultation error', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:consultationId/summary/complete', async (req, res) => {
+  try {
+    const { consultationId } = req.params;
+    if (!consultationId) return res.status(400).json({ error: 'Missing consultationId' });
+
+    const updates = {
+      status: 'doctor_ready_conclude',
+      summary_stage: 'ready',
+      summary_ready_at: new Date().toISOString(),
+    };
+
+    const { data: updated, error } = await supabase
+      .from('consultations')
+      .update(updates)
+      .eq('consultation_id', consultationId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+
+    await emitConsultationUpdate(updated);
+
+    return res.json({ ok: true, consultation: updated });
+  } catch (e) {
+    console.error('complete summary error', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:consultationId/awaiting-payment', async (req, res) => {
+  try {
+    const { consultationId } = req.params;
+    if (!consultationId) return res.status(400).json({ error: 'Missing consultationId' });
+
+    const updates = {
+      status: 'awaiting_payment',
+      awaiting_payment_at: new Date().toISOString(),
+    };
+
+    const { data: updated, error } = await supabase
+      .from('consultations')
+      .update(updates)
+      .eq('consultation_id', consultationId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+
+    await emitConsultationUpdate(updated);
+
+    return res.json({ ok: true, consultation: updated });
+  } catch (e) {
+    console.error('awaiting payment error', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:consultationId/paid', async (req, res) => {
+  try {
+    const { consultationId } = req.params;
+    if (!consultationId) return res.status(400).json({ error: 'Missing consultationId' });
+
+    const updates = {
+      status: 'completed',
+      manual_paid_at: new Date().toISOString(),
+      ended_at: new Date().toISOString(),
+    };
+
+    const { data: updated, error } = await supabase
+      .from('consultations')
+      .update(updates)
+      .eq('consultation_id', consultationId)
+      .select('*')
+      .maybeSingle();
+    if (error) throw error;
+
+    await emitConsultationUpdate(updated);
+
+    return res.json({ ok: true, consultation: updated });
+  } catch (e) {
+    console.error('mark paid error', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 // End consultation (complete) and notify patient
 router.post('/:consultationId/end', async (req, res) => {
   try {

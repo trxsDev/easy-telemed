@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { Steps, Button, Card, message, Upload, Tag } from "antd";
+import { Steps, Button, Card, message, Upload, Tag, Radio, Select, Input } from "antd";
 import { LeftOutlined, RightOutlined, InboxOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import Base from "./Section/Base";
 import Screen from "./Section/Screen";
 import HumanBody from "../3D/HumanBody";
-import { Input } from "antd";
 // Supabase calls have been moved to backend APIs
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 import { useNavigate } from "react-router-dom";
@@ -63,15 +62,17 @@ const SpecialtyStep = React.memo(
               const hasActiveDoctor = activeCount > 0;
 
               return (
-                <button
+                <Button
                   key={spec.id}
-                  type="button"
+                  type="default"
+                  block
                   onClick={() => hasActiveDoctor && onSelect(spec.id)}
                   disabled={!hasActiveDoctor}
                   style={{
                     padding: "16px 20px",
                     borderRadius: 12,
                     textAlign: "left",
+                    height: "auto",
                     border: `2px solid ${
                       isSelected ? "#1890ff" : hasActiveDoctor ? "#d9d9d9" : "#f0f0f0"
                     }`,
@@ -83,7 +84,10 @@ const SpecialtyStep = React.memo(
                     boxShadow: isSelected
                       ? "0 4px 10px rgba(24, 144, 255, 0.2)"
                       : "0 2px 6px rgba(0,0,0,0.05)",
-                    cursor: hasActiveDoctor ? "pointer" : "not-allowed",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    gap: 4,
                     transition: "all 0.2s ease",
                   }}
                 >
@@ -103,7 +107,7 @@ const SpecialtyStep = React.memo(
                         : t("NO_ACTIVE_DOCTOR", "ยังไม่มีแพทย์ออนไลน์")}
                     </Tag>
                   </div>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -135,95 +139,102 @@ const SymptomsStep = React.memo(
     setPainLevel,
     selectedBodyParts,
     t,
-  }) => (
-    <div style={{ padding: 20 }}>
-      <h3>{t("DESCRIBE_SYMPTOMS", "Describe Your Symptoms")}</h3>
+  }) => {
+    const painLevels = useMemo(() => Array.from({ length: 10 }, (_, idx) => idx + 1), []);
 
-      <div style={{ marginBottom: 24 }}>
-        <label
-          style={{ display: "block", marginBottom: 8, fontWeight: "bold" }}
-        >
-          {t("SYMPTOMS_TEXT", "Symptoms Description")} *
-        </label>
-        <Input.TextArea
-          value={symptomsText}
-          onChange={(e) => setSymptomsText(e.target.value)}
-          placeholder={t(
-            "DESCRIBE_SYMPTOMS_PLACEHOLDER",
-            "Please describe your symptoms in detail..."
-          )}
-          style={{
-            width: "100%",
-            minHeight: 120,
-            padding: 12,
-            borderRadius: 6,
-            border: "1px solid #d9d9d9",
-            resize: "vertical",
-          }}
-        />
-      </div>
+    return (
+      <div style={{ padding: 20 }}>
+        <h3>{t("DESCRIBE_SYMPTOMS", "Describe Your Symptoms")}</h3>
 
-      {selectedBodyParts.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <label
             style={{ display: "block", marginBottom: 8, fontWeight: "bold" }}
           >
-            {t("PAIN_AREAS", "Pain Areas")}
+            {t("SYMPTOMS_TEXT", "Symptoms Description")} *
           </label>
-          <div>
-            {selectedBodyParts.map((part, i) => (
-              <span
-                key={`${part}-${i}`}
-                style={{
-                  display: "inline-block",
-                  margin: "4px 8px 4px 0",
-                  padding: "4px 12px",
-                  backgroundColor: "#e6f7ff",
-                  color: "#1890ff",
-                  borderRadius: 16,
-                  fontSize: 14,
-                  border: "1px solid #91d5ff",
-                }}
-              >
-                {part}
-              </span>
-            ))}
-          </div>
+          <Input.TextArea
+            value={symptomsText}
+            onChange={(e) => setSymptomsText(e.target.value)}
+            placeholder={t(
+              "DESCRIBE_SYMPTOMS_PLACEHOLDER",
+              "Please describe your symptoms in detail..."
+            )}
+            style={{
+              width: "100%",
+              minHeight: 120,
+              padding: 12,
+              borderRadius: 6,
+              border: "1px solid #d9d9d9",
+              resize: "vertical",
+            }}
+          />
         </div>
-      )}
 
-      <div style={{ marginBottom: 24 }}>
-        <label
-          style={{ display: "block", marginBottom: 8, fontWeight: "bold" }}
-        >
-          {t("PAIN_LEVEL", "Pain Level (1-10)")}
-        </label>
-        <div style={{ display: "flex", gap: 8 }}>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
-            <button
-              key={level}
-              type="button"
-              onClick={() => setPainLevel(level)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 6,
-                border: "1px solid #d9d9d9",
-                backgroundColor: painLevel === level ? "#1890ff" : "#fff",
-                color: painLevel === level ? "#fff" : "#000",
-                cursor: "pointer",
-                minWidth: 40,
-              }}
+        {selectedBodyParts.length > 0 && (
+          <div style={{ marginBottom: 24 }}>
+            <label
+              style={{ display: "block", marginBottom: 8, fontWeight: "bold" }}
             >
-              {level}
-            </button>
-          ))}
+              {t("PAIN_AREAS", "Pain Areas")}
+            </label>
+            <div>
+              {selectedBodyParts.map((part, i) => (
+                <span
+                  key={`${part}-${i}`}
+                  style={{
+                    display: "inline-block",
+                    margin: "4px 8px 4px 0",
+                    padding: "4px 12px",
+                    backgroundColor: "#e6f7ff",
+                    color: "#1890ff",
+                    borderRadius: 16,
+                    fontSize: 14,
+                    border: "1px solid #91d5ff",
+                  }}
+                >
+                  {part}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 24 }}>
+          <label
+            style={{ display: "block", marginBottom: 8, fontWeight: "bold" }}
+          >
+            {t("PAIN_LEVEL", "Pain Level (1-10)")}
+          </label>
+          <Radio.Group value={painLevel} onChange={(e) => setPainLevel(e.target.value)}>
+            {painLevels.map((level) => (
+              <Radio.Button
+                key={level}
+                value={level}
+                style={{
+                  width: 64,
+                  height: 64,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 12,
+                  marginRight: 16,
+                  marginBottom: 16,
+                  fontWeight: 600,
+                  fontSize: 16,
+                }}
+                aria-label={t("PAIN_LEVEL_SELECTION", "Pain level {{level}}", { level })}
+              >
+                {level}
+              </Radio.Button>
+            ))}
+          </Radio.Group>
+          <small style={{ color: "#666", marginTop: 4, display: "block" }}>
+            1 = Minimal pain, 10 = Severe pain
+          </small>
         </div>
-        <small style={{ color: "#666", marginTop: 4, display: "block" }}>
-          1 = Minimal pain, 10 = Severe pain
-        </small>
       </div>
-    </div>
-  )
+    );
+  }
 );
 
 const SeverityStep = React.memo(
@@ -285,37 +296,11 @@ const SeverityStep = React.memo(
           >
             {t("SEVERITY_LEVEL", "Overall Severity")} *
           </label>
-          <div style={{ display: "flex", gap: 12 }}>
-            {[
-              { value: "mild", label: t("MILD", "Mild"), color: "#52c41a" },
-              {
-                value: "medium",
-                label: t("MODERATE", "Moderate"),
-                color: "#faad14",
-              },
-              { value: "severe", label: t("SEVERE", "Severe"), color: "#f5222d" },
-            ].map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setSeverity(option.value)}
-                style={{
-                  padding: "12px 24px",
-                  borderRadius: 8,
-                  border: "2px solid",
-                  borderColor:
-                    severity === option.value ? option.color : "#d9d9d9",
-                  backgroundColor:
-                    severity === option.value ? option.color : "#fff",
-                  color: severity === option.value ? "#fff" : "#000",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+          <Radio.Group value={severity} onChange={(e) => setSeverity(e.target.value)} buttonStyle="solid">
+            <Radio.Button value="mild">{t("MILD", "Mild")}</Radio.Button>
+            <Radio.Button value="medium">{t("MODERATE", "Moderate")}</Radio.Button>
+            <Radio.Button value="severe">{t("SEVERE", "Severe")}</Radio.Button>
+          </Radio.Group>
         </div>
 
         <div style={{ marginBottom: 24 }}>
@@ -324,27 +309,23 @@ const SeverityStep = React.memo(
           >
             {t("WHEN_STARTED", "When did symptoms start?")}
           </label>
-          <select
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-            style={{
-              width: "100%",
-              padding: 12,
-              borderRadius: 6,
-              border: "1px solid #d9d9d9",
-            }}
-          >
-            <option value="">{t("SELECT_DURATION", "Select duration")}</option>
-            <option value="less_than_hour">
-              {t("LESS_THAN_HOUR", "Less than 1 hour")}
-            </option>
-            <option value="few_hours">{t("FEW_HOURS", "Few hours ago")}</option>
-            <option value="today">{t("TODAY", "Today")}</option>
-            <option value="yesterday">{t("YESTERDAY", "Yesterday")}</option>
-            <option value="few_days">{t("FEW_DAYS", "Few days ago")}</option>
-            <option value="week">{t("WEEK", "About a week ago")}</option>
-            <option value="longer">{t("LONGER", "Longer than a week")}</option>
-          </select>
+          <Select
+            value={duration || undefined}
+            onChange={(value) => setDuration(value || "")}
+            placeholder={t("SELECT_DURATION", "Select duration")}
+            size="large"
+            style={{ width: "100%" }}
+            options={[
+              { value: "less_than_hour", label: t("LESS_THAN_HOUR", "Less than 1 hour") },
+              { value: "few_hours", label: t("FEW_HOURS", "Few hours ago") },
+              { value: "today", label: t("TODAY", "Today") },
+              { value: "yesterday", label: t("YESTERDAY", "Yesterday") },
+              { value: "few_days", label: t("FEW_DAYS", "Few days ago") },
+              { value: "week", label: t("WEEK", "About a week ago") },
+              { value: "longer", label: t("LONGER", "Longer than a week") },
+            ]}
+            allowClear
+          />
         </div>
 
         <div style={{ marginBottom: 24 }}>
@@ -425,28 +406,33 @@ function CaseScreeningForm() {
   const [selectedFiles, setSelectedFiles] = useState([]); // เก็บไฟล์ที่เลือกไว้ก่อนอัพโหลด
 
   // Redirect guard: if there is an active case already in progress, send user to latest step
-  useEffect(() => {
-    const enforceSingleActiveCase = async () => {
-      let activeCaseId;
-      try { activeCaseId = localStorage.getItem('activeCaseId'); } catch {}
-      if (!activeCaseId) return;
-      try {
-        const { case: caseRow, matchRequest, consultation } = await fetchMatchingStatusByCase(activeCaseId);
-        // Redirect only if this case belongs to current user AND it has an active request/consultation
-        const belongs = !!caseRow && caseRow.patient_id && user?.user_id && caseRow.patient_id === user.user_id;
-        if (belongs && (consultation || matchRequest)) {
-          navigate(`/easy-telemed/matching/${activeCaseId}/wait`, { replace: true });
-        } else {
-          // Clear stale active case reference to prevent redirect loops
-          try { localStorage.removeItem('activeCaseId'); } catch {}
+    useEffect(() => {
+      const enforceSingleActiveCase = async () => {
+        let activeCaseId;
+        try { activeCaseId = localStorage.getItem('activeCaseId'); } catch {}
+        if (!activeCaseId) {
+          navigate('/easy-telemed/illness-case', { replace: true });
+          return;
         }
-      } catch {
-        // If status fetch fails, clear to be safe
-        try { localStorage.removeItem('activeCaseId'); } catch {}
-      }
-    };
-    enforceSingleActiveCase();
-  }, [navigate, user?.user_id]);
+        try {
+          const { case: caseRow, matchRequest, consultation } = await fetchMatchingStatusByCase(activeCaseId);
+          // Redirect only if this case belongs to current user AND it has an active request/consultation
+          const belongs = !!caseRow && caseRow.patient_id && user?.user_id && caseRow.patient_id === user.user_id;
+          if (belongs && (consultation || matchRequest)) {
+            navigate(`/easy-telemed/matching/${activeCaseId}/wait`, { replace: true });
+          } else {
+            // Clear stale active case reference to prevent redirect loops
+            try { localStorage.removeItem('activeCaseId'); } catch {}
+            navigate('/easy-telemed/illness-case', { replace: true });
+          }
+        } catch {
+          // If status fetch fails, clear to be safe
+          try { localStorage.removeItem('activeCaseId'); } catch {}
+          navigate('/easy-telemed/illness-case', { replace: true });
+        }
+      };
+      enforceSingleActiveCase();
+    }, [navigate, user?.user_id]);
 
   const loadAvailability = useCallback(async () => {
     try {
