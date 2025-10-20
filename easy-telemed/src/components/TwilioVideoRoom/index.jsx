@@ -276,7 +276,7 @@ function TwilioVideoRoom({
     if (localInlineVideoRef.current) {
       localInlineVideoRef.current.innerHTML = '';
     }
-    try { twilioVideoService.hangupAndReset(); } catch (_) {}
+    try { twilioVideoService.hangupAndReset(false); } catch (_) {}
     const { intentional, allowReconnect } = disconnectIntentRef.current;
     const { manualOnly } = autoJoinStateRef.current;
     const shouldRetryAuto = !manualOnly && (allowReconnect || !intentional);
@@ -482,7 +482,7 @@ function TwilioVideoRoom({
   const leaveRoom = useCallback(() => {
     // ปิดห้องและอุปกรณ์ทั้งหมดทันทีตามที่ร้องขอ
     disconnectIntentRef.current = { intentional: true, allowReconnect: false };
-    try { twilioVideoService.hangupAndReset(); } catch (_) {}
+    try { twilioVideoService.hangupAndReset(false); } catch (_) {}
     setIsConnected(false);
     setCurrentRoomName('');
     setParticipants([]);
@@ -544,7 +544,7 @@ function TwilioVideoRoom({
     return () => {
       try {
         // Attempt full hangup and device reset on unmount
-        twilioVideoService.hangupAndReset();
+        twilioVideoService.hangupAndReset(false);
       } catch (_) {}
     };
   }, []);

@@ -1,11 +1,51 @@
 /* eslint-env node */
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const { supabase } = require('../supabase');
 const { emitToUser } = require('../socket');
 const PDFDocument = require('pdfkit');
 
 const router = express.Router();
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BACKEND_URL || process.env.APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
+
+const expandUserPath = (p) => {
+  if (!p) return null;
+  if (p.startsWith('~')) {
+    const home = process.env.HOME || process.env.USERPROFILE;
+    if (!home) return null;
+    return path.join(home, p.slice(1));
+  }
+  return p;
+};
+
+const FONT_DIR = path.join(__dirname, '..', 'fonts');
+const DEFAULT_LATIN_FONT = path.join(FONT_DIR, 'Roboto-Regular.ttf');
+const DEFAULT_THAI_FONT = path.join(FONT_DIR, 'Sarabun-Regular.ttf');
+
+const LATIN_FONT_PATH = (() => {
+  const env = expandUserPath(process.env.PDF_LATIN_FONT_PATH);
+  if (env && fs.existsSync(env)) return env;
+  if (fs.existsSync(DEFAULT_LATIN_FONT)) return DEFAULT_LATIN_FONT;
+  return null;
+})();
+
+const THAI_FONT_PATH = (() => {
+  const env = expandUserPath(process.env.PDF_THAI_FONT_PATH || process.env.PDF_FONT_PATH);
+  if (env && fs.existsSync(env)) return env;
+  if (fs.existsSync(DEFAULT_THAI_FONT)) return DEFAULT_THAI_FONT;
+  return null;
+})();
+
+if (!LATIN_FONT_PATH) {
+  // eslint-disable-next-line no-console
+  console.warn('[pdf] Latin font (Roboto) not found; headings will fall back to default PDF font. Set PDF_LATIN_FONT_PATH to override.');
+}
+
+if (!THAI_FONT_PATH) {
+  // eslint-disable-next-line no-console
+  console.warn('[pdf] Thai font (Sarabun) not found; PDF output may not render Thai characters correctly. Set PDF_THAI_FONT_PATH or PDF_FONT_PATH to a Thai TrueType font.');
+}
 
 const safeText = (value) => {
   if (value === null || value === undefined) return '-';
@@ -130,6 +170,9 @@ const loadSummaryContext = async (consultationId) => {
   };
 };
 
+const LOGO_PATH = path.join(__dirname, '..', 'assets', 'easy-telemed-logo.png');
+const HAS_LOGO = LOGO_PATH && fs.existsSync(LOGO_PATH);
+
 const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doctor, dischargeSummary, prescription, items }) => new Promise((resolve, reject) => {
   try {
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
@@ -138,7 +181,70 @@ const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doct
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.fontSize(18).text('Telemedicine Consultation Summary', { align: 'center' });
+    let headingFont = null;
+    let bodyFont = null;
+
+    if (LATIN_FONT_PATH) {
+      try {
+        doc.registerFont('roboto', LATIN_FONT_PATH);
+        headingFont = 'roboto';
+      } catch (fontErr) {
+        console.warn('[pdf] Failed to register Latin font', LATIN_FONT_PATH, fontErr?.message || fontErr);
+      }
+    }
+
+    if (THAI_FONT_PATH) {
+      try {
+        doc.registerFont('sarabun', THAI_FONT_PATH);
+        bodyFont = 'sarabun';
+      } catch (fontErr) {
+        console.warn('[pdf] Failed to register Thai font', THAI_FONT_PATH, fontErr?.message || fontErr);
+      }
+    }
+
+    if (bodyFont) {
+      headingFont = bodyFont;
+    } else if (headingFont) {
+      bodyFont = headingFont;
+    }
+
+    if (bodyFont) {
+      doc.font(bodyFont);
+    }
+
+    if (bodyFont) doc.font(bodyFont);
+
+    // Header / branding
+    let headerBottomY = 50;
+    if (HAS_LOGO) {
+      try {
+        const logoWidth = 180;
+        const logoX = 50;
+        const logoY = 45;
+        doc.image(LOGO_PATH, logoX, logoY, { width: logoWidth });
+        headerBottomY = logoY + 60;
+      } catch (err) {
+        console.warn('[pdf] logo render failed', err?.message || err);
+      }
+    } else {
+      doc.fontSize(24).text('Easy Telemed', 50, 50);
+      headerBottomY = doc.y;
+    }
+
+    doc.fontSize(12)
+      .text('Telemedicine Consultation Summary', 50, headerBottomY, { align: 'left' });
+
+    const infoX = doc.page.width - 220;
+    doc.fontSize(10)
+      .text(`Generated At : ${formatDateTime(new Date().toISOString())}`, infoX, 60)
+      .text(`Consultation ID : ${consultationId}`, infoX, doc.y + 4);
+
+    // Divider line
+    doc.moveTo(50, headerBottomY + 18)
+      .lineTo(doc.page.width - 50, headerBottomY + 18)
+      .stroke();
+
+    doc.moveDown(1.5);
     doc.moveDown();
     doc.fontSize(12);
     doc.text(`Generated At: ${formatDateTime(new Date().toISOString())}`);
@@ -146,8 +252,10 @@ const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doct
     doc.text(`Consultation Status: ${safeText(consultation?.status)}`);
     doc.moveDown();
 
+    if (headingFont) doc.font(headingFont);
     doc.fontSize(14).text('Participants', { underline: true });
     doc.moveDown(0.5);
+    if (bodyFont) doc.font(bodyFont);
     doc.fontSize(12);
     doc.text(`Patient: ${safeText(patient?.display_name)} (${safeText(consultation?.patient_id)})`);
     doc.text(`Doctor: ${safeText(doctor?.display_name)} (${safeText(consultation?.doctor_id)})`);
@@ -157,21 +265,27 @@ const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doct
     doc.moveDown();
 
     if (caseData?.symptoms_text) {
+      if (headingFont) doc.font(headingFont);
       doc.fontSize(14).text('Presenting Symptoms', { underline: true });
       doc.moveDown(0.5);
+      if (bodyFont) doc.font(bodyFont);
       doc.fontSize(12).text(caseData.symptoms_text, { align: 'left' });
       doc.moveDown();
     }
 
+    if (headingFont) doc.font(headingFont);
     doc.fontSize(14).text('Clinical Summary', { underline: true });
     doc.moveDown(0.5);
+    if (bodyFont) doc.font(bodyFont);
     doc.fontSize(12).text(`Diagnosis: ${safeText(dischargeSummary?.diagnosis)}`);
     doc.text(`Treatment Plan: ${safeText(dischargeSummary?.plan)}`);
     doc.text(`Advice: ${safeText(dischargeSummary?.advice)}`);
     doc.moveDown();
 
+    if (headingFont) doc.font(headingFont);
     doc.fontSize(14).text('Medication', { underline: true });
     doc.moveDown(0.5);
+    if (bodyFont) doc.font(bodyFont);
     doc.fontSize(12);
     if (Array.isArray(items) && items.length > 0) {
       items.forEach((item, idx) => {
@@ -194,6 +308,7 @@ const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doct
     }
     doc.moveDown();
 
+    if (headingFont) doc.font(headingFont);
     doc.fontSize(12).text('--- End of Summary ---', { align: 'center' });
     doc.end();
   } catch (err) {

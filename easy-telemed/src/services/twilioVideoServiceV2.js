@@ -157,22 +157,17 @@ export class TwilioVideoService {
   }
 
   // วางสาย + reset อุปกรณ์ (best-effort)
-  async hangupAndReset() {
+  async hangupAndReset(retainLocalTracks = false) {
     try { this.leaveRoom(); } catch (_) {}
-    // Try to stop any lingering media stream tracks
-    try {
-      const streams = await navigator.mediaDevices?.getUserMedia({ audio: true, video: true }).catch(() => null);
-      if (streams) {
-        if (streams.getTracks) {
-          streams.getTracks().forEach((t) => {
-            try { t.stop(); } catch (_) {}
-          });
-        }
-        // Older browsers may need to stop separately
-        if (streams.getAudioTracks) streams.getAudioTracks().forEach(t => { try { t.stop(); } catch (_) {} });
-        if (streams.getVideoTracks) streams.getVideoTracks().forEach(t => { try { t.stop(); } catch (_) {} });
-      }
-    } catch (_) {}
+    if (!retainLocalTracks) {
+      try {
+        this.localTracks.forEach((track) => {
+          try { track.disable?.(); } catch (_) {}
+          try { track.stop?.(); } catch (_) {}
+        });
+      } catch (_) {}
+      this.localTracks = [];
+    }
   }
 
   // เริ่มต้น local video/audio
