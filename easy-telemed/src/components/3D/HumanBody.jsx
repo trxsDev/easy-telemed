@@ -8,7 +8,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Canvas, useLoader } from "@react-three/fiber";
+import { Canvas, useLoader, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
@@ -32,6 +32,7 @@ const REGION_LABELS = REGIONS.reduce((acc, region) => {
 function ensureOverlayStyles() {
   if (typeof document === "undefined") return;
   if (document.getElementById("human-body-overlay-style")) return;
+
   const style = document.createElement("style");
   style.id = "human-body-overlay-style";
   style.textContent = `
@@ -61,6 +62,7 @@ const defaultModelUrl = (() => {
 
 function computeRegions(bounds) {
   if (!bounds) return [];
+
   const size = new THREE.Vector3();
   const center = new THREE.Vector3();
   bounds.getSize(size);
@@ -77,13 +79,13 @@ function computeRegions(bounds) {
       id: "head",
       label: REGION_LABELS.head,
       position: [center.x, bounds.max.y - headHeight / 2, center.z],
-      args: [width * 0.48, headHeight, depth],
+      dimensions: [width * 0.48, headHeight, depth],
     },
     {
       id: "chest",
       label: REGION_LABELS.chest,
       position: [center.x, bounds.max.y - headHeight - torsoHeight / 2, center.z],
-      args: [width * 0.6, torsoHeight, depth],
+      dimensions: [width * 0.6, torsoHeight, depth],
     },
     {
       id: "leftArm",
@@ -93,7 +95,7 @@ function computeRegions(bounds) {
         bounds.max.y - headHeight - torsoHeight * 0.2,
         center.z,
       ],
-      args: [width * 0.35, torsoHeight * 0.8, depth * 0.9],
+      dimensions: [width * 0.35, torsoHeight * 0.8, depth * 0.9],
     },
     {
       id: "rightArm",
@@ -103,19 +105,19 @@ function computeRegions(bounds) {
         bounds.max.y - headHeight - torsoHeight * 0.2,
         center.z,
       ],
-      args: [width * 0.35, torsoHeight * 0.8, depth * 0.9],
+      dimensions: [width * 0.35, torsoHeight * 0.8, depth * 0.9],
     },
     {
       id: "leftLeg",
       label: REGION_LABELS.leftLeg,
       position: [center.x - width * 0.15, bounds.min.y + legsHeight / 2, center.z],
-      args: [width * 0.35, legsHeight * 0.9, depth],
+      dimensions: [width * 0.35, legsHeight * 0.9, depth],
     },
     {
       id: "rightLeg",
       label: REGION_LABELS.rightLeg,
       position: [center.x + width * 0.15, bounds.min.y + legsHeight / 2, center.z],
-      args: [width * 0.35, legsHeight * 0.9, depth],
+      dimensions: [width * 0.35, legsHeight * 0.9, depth],
     },
   ];
 }
@@ -158,12 +160,15 @@ class ModelErrorBoundary extends React.Component {
     super(props);
     this.state = { hasError: false };
   }
+
   static getDerivedStateFromError() {
     return { hasError: true };
   }
-  componentDidCatch(err, info) {
-    console.error("3D Model Error:", err, info);
+
+  componentDidCatch(error, info) {
+    console.error("3D Model Error:", error, info);
   }
+
   render() {
     if (this.state.hasError) {
       return (
@@ -189,18 +194,9 @@ class ModelErrorBoundary extends React.Component {
         </div>
       );
     }
+
     return this.props.children;
   }
-}
-
-function computeMarkers(prev, id, position) {
-  const next = prev.filter((marker) => marker.id !== id);
-  next.push({ id, position });
-  return next;
-}
-
-function toArray(vec3) {
-  return [vec3.x, vec3.y, vec3.z];
 }
 
 const Model = forwardRef(function Model({ url, onReady }, ref) {
@@ -211,6 +207,7 @@ const Model = forwardRef(function Model({ url, onReady }, ref) {
       if (child.isMesh) {
         child.castShadow = true;
         child.receiveShadow = true;
+
         if (!(child.material instanceof THREE.MeshStandardMaterial)) {
           child.material = new THREE.MeshStandardMaterial({
             color: new THREE.Color("#d6d6d6"),
@@ -239,60 +236,6 @@ const Model = forwardRef(function Model({ url, onReady }, ref) {
   return <primitive object={object} />;
 });
 
-function useRegionMarkers(modelRef) {
-  const [markers, setMarkers] = useState([]);
-
-  const addMarker = useCallback(
-    (id, event, fallback) => {
-      const mesh = modelRef.current?.object;
-      const ray =
-        event && event.ray && typeof event.ray.intersectObject === "function"
-          ? event.ray
-          : null;
-      if (mesh && ray) {
-        const hits = ray.intersectObject(mesh, true);
-        if (hits && hits.length) {
-          const intersection = hits[0];
-          const point = intersection.point.clone();
-          if (intersection.face) {
-            const normal = intersection.face.normal
-              .clone()
-              .transformDirection(intersection.object.matrixWorld)
-              .normalize();
-            point.addScaledVector(normal, EPSILON);
-          }
-          setMarkers((prev) => computeMarkers(prev, id, toArray(point)));
-          return;
-        }
-      }
-
-      if (fallback) {
-        const point = Array.isArray(fallback)
-          ? new THREE.Vector3().fromArray(fallback)
-          : fallback.clone();
-        setMarkers((prev) => computeMarkers(prev, id, toArray(point)));
-        return;
-      }
-
-      if (event?.point) {
-        const point = event.point.clone();
-        setMarkers((prev) => computeMarkers(prev, id, toArray(point)));
-      }
-    },
-    [modelRef]
-  );
-
-  const removeMarker = useCallback((id) => {
-    setMarkers((prev) => prev.filter((marker) => marker.id !== id));
-  }, []);
-
-  const syncWithSelection = useCallback((selectionSet) => {
-    setMarkers((prev) => prev.filter((marker) => selectionSet.has(marker.id)));
-  }, []);
-
-  return { markers, addMarker, removeMarker, syncWithSelection };
-}
-
 function HumanBody({
   onBodyPartSelect,
   selectedParts = [],
@@ -302,6 +245,7 @@ function HumanBody({
   ensureOverlayStyles();
 
   const [selection, setSelection] = useState(() => new Set(selectedParts));
+  const [markers, setMarkers] = useState([]);
   const [bounds, setBounds] = useState(null);
   const [rotationDeg, setRotationDeg] = useState(0);
   const rotationRad = useMemo(
@@ -309,34 +253,63 @@ function HumanBody({
     [rotationDeg]
   );
   const modelRef = useRef(null);
-  const { markers, addMarker, removeMarker, syncWithSelection } = useRegionMarkers(modelRef);
 
   useEffect(() => {
     const next = new Set(selectedParts || []);
     setSelection(next);
-    syncWithSelection(next);
-  }, [selectedParts, syncWithSelection]);
+    setMarkers((prev) => prev.filter((marker) => next.has(marker.id)));
+  }, [selectedParts]);
 
-  const emitSelection = useCallback(
-    (next) => {
-      onBodyPartSelect?.(Array.from(next));
+  const addMarker = useCallback(
+    (id, event, fallback) => {
+      let targetPoint;
+
+      const object = modelRef.current?.object;
+      if (object && event?.ray?.intersectObject) {
+        const hits = event.ray.intersectObject(object, true) || [];
+        if (hits.length > 0) {
+          const hit = hits[0];
+          targetPoint = hit.point.clone();
+          if (hit.face) {
+            const normal = hit.face.normal
+              .clone()
+              .transformDirection(hit.object.matrixWorld)
+              .normalize();
+            targetPoint.addScaledVector(normal, EPSILON);
+          }
+        }
+      }
+
+      if (!targetPoint && fallback) {
+        targetPoint =
+          fallback instanceof THREE.Vector3
+            ? fallback.clone()
+            : Array.isArray(fallback)
+            ? new THREE.Vector3().fromArray(fallback)
+            : fallback.clone();
+      }
+
+      if (!targetPoint && event?.point) {
+        targetPoint = event.point.clone();
+      }
+
+      if (!targetPoint) return;
+
+      const position = targetPoint.toArray();
+      setMarkers((prev) => {
+        const next = prev.filter((marker) => marker.id !== id);
+        next.push({ id, position });
+        return next;
+      });
     },
-    [onBodyPartSelect]
+    [modelRef]
   );
 
-  const rotatePosition = useCallback(
-    (position) => {
-      if (!position) return undefined;
-      const vec = Array.isArray(position)
-        ? new THREE.Vector3().fromArray(position)
-        : position.clone();
-      vec.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationRad);
-      return vec;
-    },
-    [rotationRad]
-  );
+  const removeMarker = useCallback((id) => {
+    setMarkers((prev) => prev.filter((marker) => marker.id !== id));
+  }, []);
 
-  const toggleRegion = useCallback(
+  const toggleSelection = useCallback(
     (id, event, fallbackPosition) => {
       setSelection((prev) => {
         const next = new Set(prev);
@@ -345,25 +318,51 @@ function HumanBody({
           removeMarker(id);
         } else {
           next.add(id);
-          if (event || fallbackPosition) {
-            addMarker(id, event, rotatePosition(fallbackPosition));
-          }
+          addMarker(id, event, fallbackPosition);
         }
-        emitSelection(next);
+        onBodyPartSelect?.(Array.from(next));
         return next;
       });
     },
-    [addMarker, emitSelection, removeMarker, rotatePosition]
+    [addMarker, onBodyPartSelect, removeMarker]
   );
 
-  const activeSet = selection;
+  const rotatePosition = useCallback(
+    (position) => {
+      if (!position) return undefined;
+      const vector =
+        position instanceof THREE.Vector3
+          ? position.clone()
+          : Array.isArray(position)
+          ? new THREE.Vector3().fromArray(position)
+          : position.clone();
+      vector.applyAxisAngle(new THREE.Vector3(0, 1, 0), rotationRad);
+      return vector;
+    },
+    [rotationRad]
+  );
+
   const regionData = useMemo(
     () => (bounds ? computeRegions(bounds) : []),
     [bounds]
   );
 
+  useEffect(() => {
+    if (!bounds || !selection.size) return;
+    const fallbackMap = new Map(
+      regionData.map((region) => [region.id, region.position])
+    );
+
+    selection.forEach((id) => {
+      if (!fallbackMap.has(id)) return;
+      if (markers.some((marker) => marker.id === id)) return;
+      const rotated = rotatePosition(fallbackMap.get(id));
+      addMarker(id, undefined, rotated);
+    });
+  }, [addMarker, bounds, markers, regionData, rotatePosition, selection]);
+
   const markerElements = markers
-    .filter((marker) => activeSet.has(marker.id))
+    .filter((marker) => selection.has(marker.id))
     .map((marker) => (
       <Html key={marker.id} position={marker.position} transform={false}>
         <div
@@ -375,68 +374,48 @@ function HumanBody({
 
   const urlToLoad = modelUrl || defaultModelUrl;
 
-  useEffect(() => {
-    if (!bounds || !selection.size) return;
-    const regionMap = new Map(
-      regionData.map((region) => [region.id, rotatePosition(region.position)])
-    );
-    selection.forEach((id) => {
-      if (!regionMap.has(id)) return;
-      if (!markers.some((marker) => marker.id === id)) {
-        addMarker(id, undefined, regionMap.get(id));
-      }
-    });
-  }, [bounds, regionData, selection, markers, addMarker, rotatePosition]);
+  const containerStyles = {
+    width: "100%",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 12,
+  };
+
+  const canvasWrapperStyles = {
+    width: "100%",
+    height,
+    borderRadius: 16,
+    overflow: "hidden",
+    position: "relative",
+    background: "transparent",
+  };
+
+  const sliderStyles = {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "10px 16px",
+    borderRadius: 12,
+    background: "rgba(15,22,45,0.65)",
+    boxShadow: "0 6px 18px rgba(0,0,0,0.15)",
+    color: "#fff",
+    width: "min(100%, 320px)",
+  };
+
+  const buttonsWrapperStyles = {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center",
+    width: "100%",
+  };
 
   return (
-    <div
-      style={{
-        width: "100%",
-        height,
-        borderRadius: 16,
-        overflow: "hidden",
-        position: "relative",
-        background: "transparent",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: 12,
-          left: "50%",
-          transform: "translateX(-50%)",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "8px 12px",
-          borderRadius: 12,
-          background: "rgba(15,22,45,0.65)",
-          boxShadow: "0 6px 18px rgba(0,0,0,0.2)",
-          color: "#fff",
-          pointerEvents: "auto",
-          zIndex: 2,
-        }}
-      >
-        <span style={{ fontSize: 12, fontWeight: 600 }}>หมุนโมเดล</span>
-        <input
-          type="range"
-          min="-180"
-          max="180"
-          value={rotationDeg}
-          onChange={(event) => setRotationDeg(Number(event.target.value))}
-          style={{ width: 140 }}
-        />
-        <span style={{ fontSize: 12, minWidth: 40, textAlign: "right" }}>
-          {rotationDeg}°
-        </span>
-      </div>
-
+    <div style={containerStyles}>
+      <div style={canvasWrapperStyles}>
       <ModelErrorBoundary>
-        <Canvas
-          camera={{ position: [0, 1.6, 3.4], fov: 45 }}
-          shadows
-          gl={{ antialias: true, alpha: true }}
-        >
+        <Canvas camera={{ position: [0, 1.6, 3.4], fov: 45 }} shadows>
           <Suspense fallback={<LoadingFallback />}>
             <ambientLight intensity={0.7} />
             <directionalLight position={[5, 6, 4]} intensity={0.85} castShadow />
@@ -444,11 +423,22 @@ function HumanBody({
             <group rotation={[0, rotationRad, 0]}>
               <Model ref={modelRef} url={urlToLoad} onReady={setBounds} />
               {bounds && (
-                <Regions bounds={bounds} onPick={(id, event) => toggleRegion(id, event)} />
+                <Regions
+                  regions={regionData}
+                  onPick={(id, event) =>
+                    toggleSelection(
+                      id,
+                      event,
+                      rotatePosition(
+                        regionData.find((region) => region.id === id)?.position
+                      )
+                    )
+                  }
+                />
               )}
               {markerElements}
             </group>
-            <OrbitControls
+            <ZoomLoggingControls
               makeDefault
               enableDamping
               dampingFactor={0.08}
@@ -458,23 +448,28 @@ function HumanBody({
           </Suspense>
         </Canvas>
       </ModelErrorBoundary>
+      </div>
 
-      <div
-        style={{
-          position: "absolute",
-          bottom: 10,
-          left: 10,
-          right: 10,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 8,
-          justifyContent: "center",
-          pointerEvents: "auto",
-        }}
-      >
+      <div style={sliderStyles}>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>หมุนโมเดล</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          value={rotationDeg}
+          onChange={(event) => setRotationDeg(Number(event.target.value))}
+          style={{ flex: 1 }}
+        />
+        <span style={{ fontSize: 12, minWidth: 32, textAlign: "right" }}>
+          {rotationDeg}°
+        </span>
+      </div>
+
+      <div style={buttonsWrapperStyles}>
         {REGIONS.map((region) => {
-          const active = activeSet.has(region.id);
+          const active = selection.has(region.id);
           const disabled = !bounds && !active;
+
           return (
             <button
               type="button"
@@ -483,12 +478,13 @@ function HumanBody({
               onClick={() => {
                 if (disabled) return;
                 if (active) {
-                  toggleRegion(region.id);
+                  toggleSelection(region.id);
                 } else if (bounds) {
                   const match = regionData.find((r) => r.id === region.id);
-                  toggleRegion(region.id, undefined, match?.position);
+                  const fallback = rotatePosition(match?.position);
+                  toggleSelection(region.id, undefined, fallback);
                 } else {
-                  toggleRegion(region.id);
+                  toggleSelection(region.id);
                 }
               }}
               style={{
@@ -514,11 +510,10 @@ function HumanBody({
   );
 }
 
-function Regions({ bounds, onPick }) {
-  const regions = computeRegions(bounds);
+function Regions({ regions, onPick }) {
   return (
     <group>
-      {regions.map(({ id, position, args }) => (
+      {regions.map(({ id, position, dimensions }) => (
         <mesh
           key={id}
           position={position}
@@ -528,17 +523,82 @@ function Regions({ bounds, onPick }) {
           }}
           onPointerOver={(event) => {
             event.stopPropagation();
-            if (typeof document !== "undefined") document.body.style.cursor = "pointer";
+            if (typeof document !== "undefined") {
+              document.body.style.cursor = "pointer";
+            }
           }}
           onPointerOut={() => {
-            if (typeof document !== "undefined") document.body.style.cursor = "default";
+            if (typeof document !== "undefined") {
+              document.body.style.cursor = "default";
+            }
           }}
         >
-          <boxGeometry args={args} />
+          <boxGeometry args={dimensions} />
           <meshBasicMaterial transparent opacity={0.001} color="#ffffff" />
         </mesh>
       ))}
     </group>
+  );
+}
+
+function ZoomLoggingControls({
+  minDistance = 2,
+  maxDistance = 30,
+  onZoomPercentChange,
+  ...props
+}) {
+  const controlsRef = useRef(null);
+  const camera = useThree((state) => state.camera);
+  const baselinePercentRef = useRef(null);
+
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return undefined;
+
+    const range = Math.max(maxDistance - minDistance, Number.EPSILON);
+    const clampDistance = (distance) =>
+      Math.min(Math.max(distance, minDistance), maxDistance);
+    const toNormalizedPercent = (distance) => {
+      const clamped = clampDistance(distance);
+      return ((maxDistance - clamped) / range) * 100;
+    };
+
+    baselinePercentRef.current = toNormalizedPercent(controls.getDistance());
+
+    const emitZoomPercent = () => {
+      const distance = controls.getDistance();
+      const normalized = toNormalizedPercent(distance);
+      const baseline = baselinePercentRef.current ?? normalized;
+      const percent = Math.min(
+        100,
+        Math.max(0, normalized - baseline + 100)
+      );
+
+      if (onZoomPercentChange) {
+        onZoomPercentChange(percent);
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(`Zoom: ${percent.toFixed(0)}%`);
+      }
+
+      camera.updateProjectionMatrix();
+    };
+
+    controls.addEventListener("change", emitZoomPercent);
+    emitZoomPercent();
+
+    return () => {
+      controls.removeEventListener("change", emitZoomPercent);
+    };
+  }, [camera, maxDistance, minDistance, onZoomPercentChange]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      minDistance={maxDistance}
+      maxDistance={maxDistance}
+      {...props}
+    />
   );
 }
 

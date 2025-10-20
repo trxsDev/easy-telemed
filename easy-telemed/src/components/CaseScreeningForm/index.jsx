@@ -1029,7 +1029,6 @@ function CaseScreeningForm() {
                 onBodyPartSelect={handleBodyPartSelect}
                 selectedParts={selectedBodyParts}
                 height={350}
-                modelUrl={"easy-telemed/src/assets/3DModel/HumanBody.obj"}
               />
             </div>
 
