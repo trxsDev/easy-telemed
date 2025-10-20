@@ -298,7 +298,13 @@ export class TwilioVideoService {
         if (audioTrack) this.localTracks.push(audioTrack);
       }
       if (!audioTrack) return false;
-      if (enabled) audioTrack.enable(); else audioTrack.disable();
+      if (enabled) {
+        audioTrack.enable();
+      } else {
+        try { audioTrack.disable(); } catch (_) {}
+        try { audioTrack.stop(); } catch (_) {}
+        this.localTracks = this.localTracks.filter((t) => t !== audioTrack);
+      }
       return true;
     } catch (e) {
       console.error('toggleAudio failed', e);
@@ -318,7 +324,13 @@ export class TwilioVideoService {
         if (videoTrack) this.localTracks.push(videoTrack);
       }
       if (!videoTrack) return false;
-      if (enabled) videoTrack.enable(); else videoTrack.disable();
+      if (enabled) {
+        videoTrack.enable();
+      } else {
+        try { videoTrack.disable(); } catch (_) {}
+        try { videoTrack.stop(); } catch (_) {}
+        this.localTracks = this.localTracks.filter((t) => t !== videoTrack);
+      }
       return true;
     } catch (e) {
       console.error('toggleVideo failed', e);

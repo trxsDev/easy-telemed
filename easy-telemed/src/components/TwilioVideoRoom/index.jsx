@@ -157,37 +157,51 @@ function TwilioVideoRoom({
     } catch (_) {}
   }, []);
 
-  const setupLocalTracks = useCallback(async () => {
+  const setupLocalTracks = useCallback(async (options = {}) => {
     try {
-      const existingTracks = Array.isArray(twilioVideoService.localTracks) ? twilioVideoService.localTracks : [];
+      const needVideo = options.video ?? videoEnabled;
+      const needAudio = options.audio ?? audioEnabled;
 
-      if (existingTracks.length > 0) {
+      const existingTracksRaw = Array.isArray(twilioVideoService.localTracks) ? twilioVideoService.localTracks : [];
+      const allowedKinds = new Set();
+      if (needVideo) allowedKinds.add('video');
+      if (needAudio) allowedKinds.add('audio');
+
+      const filteredExisting = existingTracksRaw.filter((track) => allowedKinds.has(track.kind));
+
+      // Stop and remove tracks that are no longer needed
+      existingTracksRaw.forEach((track) => {
+        if (!allowedKinds.has(track.kind)) {
+          try { track.disable?.(); } catch (_) {}
+          try { track.stop?.(); } catch (_) {}
+        }
+      });
+
+      if (!needVideo && !needAudio) {
+        twilioVideoService.localTracks = filteredExisting;
         setLocalTracksReady(true);
         setPermissionIssue(null);
-        return existingTracks;
+        return filteredExisting;
+      }
+
+      if ((needVideo ? 1 : 0) + (needAudio ? 1 : 0) === filteredExisting.length) {
+        twilioVideoService.localTracks = filteredExisting;
+        setLocalTracksReady(true);
+        setPermissionIssue(null);
+        return filteredExisting;
       }
 
       const tracks = await twilioVideoService.createLocalTracks({
-        video: { width: 640, height: 480 },
-        audio: true
+        video: needVideo ? { width: 640, height: 480 } : false,
+        audio: needAudio,
       });
 
-      const videoTrack = tracks.find((track) => track.kind === 'video');
-      if (videoTrack) {
-        try { videoTrack.disable(); } catch (_) {}
-      }
-
-      const audioTrack = tracks.find((track) => track.kind === 'audio');
-      if (audioTrack) {
-        try { audioTrack.disable(); } catch (_) {}
-      }
+      const usableTracks = tracks.filter((track) => allowedKinds.has(track.kind));
+      twilioVideoService.localTracks = [...filteredExisting, ...usableTracks];
 
       setLocalTracksReady(true);
       setPermissionIssue(null);
-      setAudioEnabled(false);
-      setVideoEnabled(false);
-      message.success('เตรียมอุปกรณ์เรียบร้อย (ไมค์/กล้องปิดอยู่)');
-      return tracks;
+      return twilioVideoService.localTracks;
     } catch (error) {
       console.error('Error setting up local tracks:', error);
       if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
@@ -196,7 +210,7 @@ function TwilioVideoRoom({
       message.error('ไม่สามารถเข้าถึงกล้องและไมโครโฟนได้');
       throw error;
     }
-  }, [previewOpen]);
+  }, [videoEnabled, audioEnabled]);
 
   const handleTrackSubscribed = useCallback((track, participant) => {
     console.log(`Track subscribed: ${track.kind} from ${participant.identity}`);
@@ -404,7 +418,7 @@ function TwilioVideoRoom({
     }
   }, [handleParticipantConnected, identity, onConnected, roomName, setupRoomEventListeners, canJoin, markPreviewShown, audioEnabled, videoEnabled, previewOpen]);
 
-  const openPreviewModal = useCallback(() => {
+  const openPreviewModal = useCallback(async () => {
     if (!canJoin) {
       message.info('ยังไม่มีห้องให้เข้าร่วม');
       return;
@@ -413,7 +427,19 @@ function TwilioVideoRoom({
     setPreviewOpen(true);
     setConnectError(null);
     setCanRetryJoin(false);
-  }, [canJoin]);
+    const wantsMedia = role === 'doctor';
+    if (wantsMedia) {
+      const targetAudio = true;
+      const targetVideo = true;
+      setAudioEnabled(true);
+      setVideoEnabled(true);
+      try {
+        await setupLocalTracks({ audio: targetAudio, video: targetVideo });
+      } catch (err) {
+        console.error('prepare devices failed', err);
+      }
+    }
+  }, [canJoin, role, setupLocalTracks]);
 
   const closePreviewModal = useCallback(() => {
     setPreviewOpen(false);
@@ -426,13 +452,14 @@ function TwilioVideoRoom({
       if (videoEnabled) {
         twilioVideoService.toggleVideo(false).catch(() => {});
         setVideoEnabled(false);
-        if (localModalVideoRef.current) {
-          localModalVideoRef.current.innerHTML = '';
-        }
-        if (localInlineVideoRef.current) {
-          localInlineVideoRef.current.innerHTML = '';
-        }
       }
+      if (localModalVideoRef.current) {
+        localModalVideoRef.current.innerHTML = '';
+      }
+      if (localInlineVideoRef.current) {
+        localInlineVideoRef.current.innerHTML = '';
+      }
+      setLocalTracksReady(false);
     }
     if (!isConnected) {
       autoJoinStateRef.current.attempted = false;
@@ -441,7 +468,7 @@ function TwilioVideoRoom({
 
   const confirmJoinFromPreview = useCallback(async () => {
     if (!localTracksReady && (audioEnabled || videoEnabled)) {
-      try { await setupLocalTracks(); } catch (_) { return; }
+      try { await setupLocalTracks({ audio: audioEnabled, video: videoEnabled }); } catch (_) { return; }
     }
     setJoinPending(true);
     try {
@@ -482,9 +509,7 @@ function TwilioVideoRoom({
     const ok = await twilioVideoService.toggleAudio(target);
     if (ok) {
       setAudioEnabled(target);
-      if (target && !localTracksReady) {
-        setLocalTracksReady(true);
-      }
+      setLocalTracksReady(target || videoEnabled);
       message.info(target ? 'เปิดไมโครโฟน' : 'ปิดไมโครโฟน');
     } else {
       message.error('ไม่สามารถสลับไมโครโฟนได้');
@@ -496,9 +521,7 @@ function TwilioVideoRoom({
     const ok = await twilioVideoService.toggleVideo(target);
     if (ok) {
       setVideoEnabled(target);
-      if (target && !localTracksReady) {
-        setLocalTracksReady(true);
-      }
+      setLocalTracksReady(target || audioEnabled);
       message.info(target ? 'เปิดกล้อง' : 'ปิดกล้อง');
       if (target) {
         const containerRef = previewOpen ? localModalVideoRef : localInlineVideoRef;
@@ -515,13 +538,6 @@ function TwilioVideoRoom({
       message.error('ไม่สามารถสลับกล้องได้');
     }
   };
-
-  // Click-to-prepare: request camera/mic only when user clicks preview area
-  const handlePreviewClick = useCallback(async () => {
-    if (!localTracksReady) {
-      try { await setupLocalTracks(); } catch (_) {}
-    }
-  }, [localTracksReady, setupLocalTracks]);
 
   // Cleanup on unmount only; avoid tying cleanup to isConnected to prevent loops
   useEffect(() => {
@@ -609,7 +625,7 @@ function TwilioVideoRoom({
         const cachedTracks = Array.isArray(twilioVideoService.localTracks) ? twilioVideoService.localTracks : [];
         if (cachedTracks.length === 0) {
           try {
-            await setupLocalTracks();
+            await setupLocalTracks({ audio: audioEnabled, video: videoEnabled });
           } catch (_) {
             if (!skipPreview) setPreviewOpen(true);
             return;
@@ -888,7 +904,7 @@ function TwilioVideoRoom({
           <div style={{ width: '100%', height: 420, background: '#000', borderRadius: 8, position: 'relative' }}>
             <div ref={localModalVideoRef} style={{ width: '100%', height: '100%' }} />
             {!localTracksReady && (
-              <div onClick={handlePreviewClick} style={{ cursor: 'pointer', position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <VideoCameraAddOutlined style={{ fontSize: 64, color: '#888' }} />
               </div>
             )}
