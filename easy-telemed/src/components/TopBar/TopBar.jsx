@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { CustomizeButton } from "../element/CustomizeButton";
 import { LoginOutlined } from "@ant-design/icons";
@@ -9,8 +10,27 @@ import { useTranslation } from "react-i18next";
 import ChangeLangButton from "../ChangeLangButton";
 const TopBar = () => {
   const { t } = useTranslation();
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 8);
+    };
+
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
   return (
-    <div className="topbar">
+    <div className={`topbar${isScrolled ? " topbar--scrolled" : ""}`}>
       <h1>
         Easy Tele{" "}
         <img src={medcross} alt="medical cross" className="cross-icon" /> med

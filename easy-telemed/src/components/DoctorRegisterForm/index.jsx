@@ -3,8 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { Form, Alert, Input, Button, Typography, Space, Card, message } from "antd";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 import { supabase } from "../../api/SupabaseClient";
+import { ChevronLeft } from "lucide-react";
+import ChangeLangButton from "../ChangeLangButton";
+import { useTranslation } from "react-i18next";
+import "./DoctorRegisterForm.css";
+
+const VIDEO_SRC = "/videos/doctor-register.mp4";
+const VIDEO_POSTER = "/videos/doctor-register.jpg";
 
 function DoctorRegisterForm() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -52,7 +60,7 @@ function DoctorRegisterForm() {
         .upsert([payload], { onConflict: 'user_id' }); // ต้องมี unique/PK บน user_id
       if (upsertErr) throw upsertErr;
 
-      message.success('Doctor account created');
+      message.success(t("doctorRegisterForm.successMessage"));
       navigate("/easy-telemed/home");
     } catch (err) {
       setError(err.message);
@@ -61,25 +69,60 @@ function DoctorRegisterForm() {
     }
   };
   return (
-    <div style={{ 
-      maxWidth: 520, 
-      width: '100%',
-      padding: "0 16px" 
-    }}>
+    <div className="doctor-register">
+      <video
+        className="doctor-register__video"
+        autoPlay
+        loop
+        muted
+        playsInline
+        poster={VIDEO_POSTER}
+      >
+        <source src={VIDEO_SRC} type="video/mp4" />
+      </video>
+      <div className="doctor-register__overlay" />
       <Card
         style={{
-          borderRadius: '12px',
-          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-          border: 'none'
+          borderRadius: "12px",
+          boxShadow: "0 10px 30px rgba(0, 0, 0, 0.2)",
+          border: "none",
+          position: "relative",
         }}
+        bodyStyle={{ paddingTop: 48 }}
       >
+         <div style={{marginBottom: 24}}>
+          <Button
+            type="text"
+            icon={<ChevronLeft />}
+            onClick={() => navigate("/")}
+            style={{
+              position: "absolute",
+              left: 8,
+              top: 8,
+              color: "#667eea",
+              display: "flex",
+              alignItems: "left",
+              padding: "4px 8px",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              right: 16,
+              top: 16,
+            }}
+          >
+            <ChangeLangButton />
+          </div>
+        </div>
+
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <div style={{ textAlign: 'center' }}>
             <Typography.Title level={2} style={{ margin: 0, color: '#333' }}>
-                Thanks for your interest 
+              {t("doctorRegisterForm.title")}
             </Typography.Title>
             <Typography.Text type="secondary">
-              Please sign up to your doctor account
+              {t("doctorRegisterForm.subtitle")}
             </Typography.Text>
           </div>
 
@@ -87,15 +130,19 @@ function DoctorRegisterForm() {
 
           <Form layout="vertical" onFinish={handeSubmit}>
             <Form.Item
-              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>Email Address</span>}
+              label={
+                <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                  {t("doctorRegisterForm.emailLabel")}
+                </span>
+              }
               name="username"
               rules={[
-                { required: true, message: "Please input your email!" },
-                { type: "email", message: "Please enter a valid email!" },
+                { required: true, message: t("doctorRegisterForm.emailRequired") },
+                { type: "email", message: t("doctorRegisterForm.emailInvalid") },
               ]}
             >
               <Input
-                placeholder="Enter your email"
+                placeholder={t("doctorRegisterForm.emailPlaceholder")}
                 size="large"
                 style={{ borderRadius: '8px' }}
                 onChange={(e) => setEmail(e.target.value)}
@@ -103,14 +150,18 @@ function DoctorRegisterForm() {
             </Form.Item>
 
             <Form.Item
-              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>Password</span>}
+              label={
+                <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                  {t("doctorRegisterForm.passwordLabel")}
+                </span>
+              }
               name="password"
               rules={[
-                { required: true, message: "Please input your password!" },
+                { required: true, message: t("doctorRegisterForm.passwordRequired") },
               ]}
             >
               <Input.Password
-                placeholder="Enter your password"
+                placeholder={t("doctorRegisterForm.passwordPlaceholder")}
                 size="large"
                 style={{ borderRadius: '8px' }}
                 onChange={(e) => setPassword(e.target.value)}
@@ -134,7 +185,9 @@ function DoctorRegisterForm() {
                   fontWeight: '500'
                 }}
               >
-                {loading ? 'Creating...' : 'Register as Doctor'}
+                {loading
+                  ? t("doctorRegisterForm.submitLoading")
+                  : t("doctorRegisterForm.submit")}
               </Button>
             </Form.Item>
           </Form>

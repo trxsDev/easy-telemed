@@ -13,41 +13,32 @@ function SignInForm() {
   const [error, setError] = useState("");
   const { signIn } = useUserAuthSupabase();
 
-  let navigate = useNavigate();
+  const navigate = useNavigate();
+
   const handeSubmit = async () => {
     setError("");
     try {
-      const { error } = await signIn(email, password);
-      
-      // Check if error exists and contains email confirmation issue
-      if (error) {
-        console.log("SignIn error:", error);
-        console.log("Error message:", error.message);
-        
-        // Check for email verification errors
-        const errorMessage = error.message || "";
-        const isEmailNotConfirmed = errorMessage.includes("email_not_confirmed") || 
-                                  errorMessage.includes("Email not confirmed") ||
-                                  errorMessage.includes("email not confirmed");
-        
-        console.log("Has email_not_confirmed:", isEmailNotConfirmed);
-        
-        // If email not confirmed, redirect to verify-email
+      const { error: signInError } = await signIn(email, password);
+
+      if (signInError) {
+        const errorMessage = signInError.message || "";
+        const isEmailNotConfirmed =
+          errorMessage.includes("email_not_confirmed") ||
+          errorMessage.includes("Email not confirmed") ||
+          errorMessage.includes("email not confirmed");
+
         if (isEmailNotConfirmed) {
           navigate("/verify-email");
           return;
         }
-        
-        // For other errors, show error message
-        setError(error.message);
+
+        setError(signInError.message);
         return;
       }
-      
-      // If no error, navigate to home (ProtectedRoute will handle email verification check)
+
       navigate("/easy-telemed/home");
     } catch (err) {
-      console.error("SignIn catch error:", err);
-      setError(err.message);
+      setError(err.message || t("signInForm.genericError"));
     }
   };
 
@@ -68,7 +59,7 @@ function SignInForm() {
         }}
         bodyStyle={{ paddingTop: 48 }}
       >
-        <div style={{marginBottom: 24}}>
+        <div style={{ marginBottom: 24 }}>
           <Button
             type="text"
             icon={<ChevronLeft />}
@@ -97,10 +88,10 @@ function SignInForm() {
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <div style={{ textAlign: "center" }}>
             <Typography.Title level={2} style={{ margin: 0, color: "#333" }}>
-              {t("SIGNIN_GREETING") || "Welcome Back!"}
+              {t("signInForm.title")}
             </Typography.Title>
             <Typography.Text type="secondary">
-              Please sign in to your account
+              {t("signInForm.subtitle")}
             </Typography.Text>
           </div>
 
@@ -110,17 +101,17 @@ function SignInForm() {
             <Form.Item
               label={
                 <span style={{ fontSize: "14px", fontWeight: "500" }}>
-                  Email Address
+                  {t("signInForm.emailLabel")}
                 </span>
               }
               name="username"
               rules={[
-                { required: true, message: "Please input your email!" },
-                { type: "email", message: "Please enter a valid email!" },
+                { required: true, message: t("signInForm.emailRequired") },
+                { type: "email", message: t("signInForm.emailInvalid") },
               ]}
             >
               <Input
-                placeholder="Enter your email"
+                placeholder={t("signInForm.emailPlaceholder")}
                 size="large"
                 style={{ borderRadius: "8px" }}
                 onChange={(e) => setEmail(e.target.value)}
@@ -130,16 +121,16 @@ function SignInForm() {
             <Form.Item
               label={
                 <span style={{ fontSize: "14px", fontWeight: "500" }}>
-                  Password
+                  {t("signInForm.passwordLabel")}
                 </span>
               }
               name="password"
               rules={[
-                { required: true, message: "Please input your password!" },
+                { required: true, message: t("signInForm.passwordRequired") },
               ]}
             >
               <Input.Password
-                placeholder="Enter your password"
+                placeholder={t("signInForm.passwordPlaceholder")}
                 size="large"
                 style={{ borderRadius: "8px" }}
                 onChange={(e) => setPassword(e.target.value)}
@@ -162,13 +153,13 @@ function SignInForm() {
                   fontWeight: "500",
                 }}
               >
-                Sign In
+                {t("signInForm.submit")}
               </Button>
             </Form.Item>
           </Form>
           <div style={{ textAlign: "center" }}>
             <Typography.Text type="secondary">
-              Don't have an account?{" "}
+              {t("signInForm.noAccount")}{" "}
               <Link
                 to="/signup"
                 style={{
@@ -177,7 +168,7 @@ function SignInForm() {
                   textDecoration: "none",
                 }}
               >
-                Create Account
+                {t("signInForm.signUpLink")}
               </Link>
             </Typography.Text>
           </div>
