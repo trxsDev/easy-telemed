@@ -231,85 +231,84 @@ const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doct
       headerBottomY = doc.y;
     }
 
+    const infoX = doc.page.width - 260;
+    doc.fontSize(10);
+    const infoLineHeight = doc.currentLineHeight();
+    doc.text(`Generated At : ${formatDateTime(new Date().toISOString())}`, infoX, 60);
+    doc.text(`Consultation ID : ${consultationId}`, infoX, doc.y + 4);
+
+    const titleBaselineY = doc.y - infoLineHeight; // align with Consultation ID line
+    if (bodyFont) doc.font(bodyFont);
     doc.fontSize(12)
-      .text('Telemedicine Consultation Summary', 50, headerBottomY, { align: 'left' });
+      .text('Telemedicine Consultation Summary', 50, titleBaselineY, { align: 'left' });
 
-    const infoX = doc.page.width - 220;
-    doc.fontSize(10)
-      .text(`Generated At : ${formatDateTime(new Date().toISOString())}`, infoX, 60)
-      .text(`Consultation ID : ${consultationId}`, infoX, doc.y + 4);
-
-    // Divider line
     doc.moveTo(50, headerBottomY + 18)
       .lineTo(doc.page.width - 50, headerBottomY + 18)
       .stroke();
 
-    doc.moveDown(1.5);
-    doc.moveDown();
-    doc.fontSize(12);
-    doc.text(`Generated At: ${formatDateTime(new Date().toISOString())}`);
-    doc.text(`Consultation ID: ${consultationId}`);
-    doc.text(`Consultation Status: ${safeText(consultation?.status)}`);
-    doc.moveDown();
+    let currentY = Math.max(headerBottomY + 30, doc.y + 10);
+    const leftMargin = 50;
 
-    if (headingFont) doc.font(headingFont);
-    doc.fontSize(14).text('Participants', { underline: true });
-    doc.moveDown(0.5);
-    if (bodyFont) doc.font(bodyFont);
-    doc.fontSize(12);
-    doc.text(`Patient: ${safeText(patient?.display_name)} (${safeText(consultation?.patient_id)})`);
-    doc.text(`Doctor: ${safeText(doctor?.display_name)} (${safeText(consultation?.doctor_id)})`);
-    if (caseData?.requested_specialty) {
-      doc.text(`Specialty: ${safeText(caseData.requested_specialty)}`);
-    }
-    doc.moveDown();
-
-    if (caseData?.symptoms_text) {
+    const section = (title, lines) => {
       if (headingFont) doc.font(headingFont);
-      doc.fontSize(14).text('Presenting Symptoms', { underline: true });
-      doc.moveDown(0.5);
+      doc.fontSize(13).text(title, leftMargin, currentY, { underline: true });
+      currentY = doc.y + 6;
       if (bodyFont) doc.font(bodyFont);
-      doc.fontSize(12).text(caseData.symptoms_text, { align: 'left' });
-      doc.moveDown();
-    }
+      doc.fontSize(11);
+      lines.forEach((line) => {
+        doc.text(line, leftMargin, currentY);
+        currentY = doc.y + 2;
+      });
+      currentY += 12;
+    };
+
+    const department = safeText(caseData?.requested_specialty || caseData?.specialty || caseData?.requested_specialty_id);
+    section('Participants', [
+      `Department : ${department}`,
+      `Patient    : ${safeText(patient?.display_name)} (${safeText(consultation?.patient_id)})`,
+      `Doctor     : ${safeText(doctor?.display_name)} (${safeText(consultation?.doctor_id)})`,
+    ]);
+
+    section('Presenting Symptoms', [
+      `Symptoms    : ${safeText(caseData?.symptoms_text)}`,
+      `Pain Level : ${safeText(caseData?.pain_level || caseData?.severity || '-')}`,
+    ]);
+
+    section('Clinical Summary', [
+      `Diagnosis     : ${safeText(dischargeSummary?.diagnosis)}`,
+      `Treatment Plan: ${safeText(dischargeSummary?.plan)}`,
+      `Advice        : ${safeText(dischargeSummary?.advice)}`,
+    ]);
 
     if (headingFont) doc.font(headingFont);
-    doc.fontSize(14).text('Clinical Summary', { underline: true });
-    doc.moveDown(0.5);
+    doc.fontSize(13).text('Medication', leftMargin, currentY, { underline: true });
+    currentY = doc.y + 6;
     if (bodyFont) doc.font(bodyFont);
-    doc.fontSize(12).text(`Diagnosis: ${safeText(dischargeSummary?.diagnosis)}`);
-    doc.text(`Treatment Plan: ${safeText(dischargeSummary?.plan)}`);
-    doc.text(`Advice: ${safeText(dischargeSummary?.advice)}`);
-    doc.moveDown();
-
-    if (headingFont) doc.font(headingFont);
-    doc.fontSize(14).text('Medication', { underline: true });
-    doc.moveDown(0.5);
-    if (bodyFont) doc.font(bodyFont);
-    doc.fontSize(12);
+    doc.fontSize(11);
     if (Array.isArray(items) && items.length > 0) {
       items.forEach((item, idx) => {
-        doc.text(`${idx + 1}. ${safeText(item.drug_name)}`);
+        doc.text(`${idx + 1}. ${safeText(item.drug_name)}`, leftMargin, currentY);
+        currentY = doc.y + 2;
         const details = [
-          item.dose ? `Dose: ${safeText(item.dose)}` : null,
-          item.route ? `Route: ${safeText(item.route)}` : null,
-          item.frequency ? `Frequency: ${safeText(item.frequency)}` : null,
-          item.duration ? `Duration: ${safeText(item.duration)}` : null,
-          Number.isFinite(item.quantity) ? `Quantity: ${item.quantity}` : null,
+          item.dose ? `Dose        : ${safeText(item.dose)}` : null,
+          item.route ? `Route       : ${safeText(item.route)}` : null,
+          item.frequency ? `Frequency   : ${safeText(item.frequency)}` : null,
+          item.duration ? `Duration    : ${safeText(item.duration)}` : null,
+          Number.isFinite(item.quantity) ? `Quantity    : ${item.quantity}` : null,
           item.instruction ? `Instructions: ${safeText(item.instruction)}` : null,
         ].filter(Boolean);
-        if (details.length > 0) {
-          details.forEach((line) => doc.text(`   - ${line}`));
-        }
-        doc.moveDown(0.3);
+        details.forEach((line) => {
+          doc.text(`   ${line}`, leftMargin, currentY);
+          currentY = doc.y + 2;
+        });
+        currentY += 8;
       });
     } else {
-      doc.text('No medications prescribed.');
+      doc.text('No medications prescribed.', leftMargin, currentY);
+      currentY = doc.y + 12;
     }
-    doc.moveDown();
 
-    if (headingFont) doc.font(headingFont);
-    doc.fontSize(12).text('--- End of Summary ---', { align: 'center' });
+    const footerStart = Math.max(currentY + 20, doc.page.height - 140);
     doc.end();
   } catch (err) {
     reject(err);
