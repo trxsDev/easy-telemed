@@ -162,15 +162,6 @@ function TwilioVideoRoom({
       const existingTracks = Array.isArray(twilioVideoService.localTracks) ? twilioVideoService.localTracks : [];
 
       if (existingTracks.length > 0) {
-        const videoTrack = existingTracks.find((track) => track.kind === 'video');
-        if (videoTrack) {
-          try { videoTrack.enable?.(); } catch (_) {}
-          if (previewOpen && localModalVideoRef.current) {
-            twilioVideoService.attachTrackToElement(videoTrack, localModalVideoRef.current, { isLocal: true });
-          } else if (localInlineVideoRef.current) {
-            twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true });
-          }
-        }
         setLocalTracksReady(true);
         setPermissionIssue(null);
         return existingTracks;
@@ -183,16 +174,19 @@ function TwilioVideoRoom({
 
       const videoTrack = tracks.find((track) => track.kind === 'video');
       if (videoTrack) {
-        if (previewOpen && localModalVideoRef.current) {
-          twilioVideoService.attachTrackToElement(videoTrack, localModalVideoRef.current, { isLocal: true });
-        } else if (localInlineVideoRef.current) {
-          twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true });
-        }
+        try { videoTrack.disable(); } catch (_) {}
+      }
+
+      const audioTrack = tracks.find((track) => track.kind === 'audio');
+      if (audioTrack) {
+        try { audioTrack.disable(); } catch (_) {}
       }
 
       setLocalTracksReady(true);
       setPermissionIssue(null);
-      message.success('กล้องและไมโครโฟนพร้อมใช้งาน');
+      setAudioEnabled(false);
+      setVideoEnabled(false);
+      message.success('เตรียมอุปกรณ์เรียบร้อย (ไมค์/กล้องปิดอยู่)');
       return tracks;
     } catch (error) {
       console.error('Error setting up local tracks:', error);
@@ -265,6 +259,10 @@ function TwilioVideoRoom({
     setCurrentRoomName('');
     setParticipants([]);
     remoteVideosRef.current.clear();
+    if (localInlineVideoRef.current) {
+      localInlineVideoRef.current.innerHTML = '';
+    }
+    try { twilioVideoService.hangupAndReset(); } catch (_) {}
     const { intentional, allowReconnect } = disconnectIntentRef.current;
     const { manualOnly } = autoJoinStateRef.current;
     const shouldRetryAuto = !manualOnly && (allowReconnect || !intentional);
@@ -282,6 +280,9 @@ function TwilioVideoRoom({
       autoJoinStateRef.current.manualOnly = true;
     }
     disconnectIntentRef.current = { intentional: false, allowReconnect: false };
+    setAudioEnabled(false);
+    setVideoEnabled(false);
+    setLocalTracksReady(false);
     onDisconnected?.(error);
   }, [autoJoin, onDisconnected]);
 
@@ -403,7 +404,7 @@ function TwilioVideoRoom({
     }
   }, [handleParticipantConnected, identity, onConnected, roomName, setupRoomEventListeners, canJoin, markPreviewShown, audioEnabled, videoEnabled, previewOpen]);
 
-  const openPreviewModal = useCallback(async () => {
+  const openPreviewModal = useCallback(() => {
     if (!canJoin) {
       message.info('ยังไม่มีห้องให้เข้าร่วม');
       return;
@@ -412,26 +413,35 @@ function TwilioVideoRoom({
     setPreviewOpen(true);
     setConnectError(null);
     setCanRetryJoin(false);
-    // Immediately request camera/mic on the same user gesture
-    try {
-      if (!localTracksReady) {
-        await setupLocalTracks();
-      }
-    } catch (_) {}
-  }, [canJoin, localTracksReady, setupLocalTracks]);
+  }, [canJoin]);
 
   const closePreviewModal = useCallback(() => {
     setPreviewOpen(false);
     setJoinPending(false);
     if (!isConnected) {
+      if (audioEnabled) {
+        twilioVideoService.toggleAudio(false).catch(() => {});
+        setAudioEnabled(false);
+      }
+      if (videoEnabled) {
+        twilioVideoService.toggleVideo(false).catch(() => {});
+        setVideoEnabled(false);
+        if (localModalVideoRef.current) {
+          localModalVideoRef.current.innerHTML = '';
+        }
+        if (localInlineVideoRef.current) {
+          localInlineVideoRef.current.innerHTML = '';
+        }
+      }
+    }
+    if (!isConnected) {
       autoJoinStateRef.current.attempted = false;
     }
-  }, [isConnected]);
+  }, [audioEnabled, videoEnabled, isConnected]);
 
   const confirmJoinFromPreview = useCallback(async () => {
-    if (!localTracksReady) {
-      try { await setupLocalTracks(); } catch (_) {}
-      if (!localTracksReady) return;
+    if (!localTracksReady && (audioEnabled || videoEnabled)) {
+      try { await setupLocalTracks(); } catch (_) { return; }
     }
     setJoinPending(true);
     try {
@@ -440,7 +450,7 @@ function TwilioVideoRoom({
     } finally {
       setJoinPending(false);
     }
-  }, [localTracksReady, setupLocalTracks, joinRoom, defaultRoomName, defaultIdentity]);
+  }, [audioEnabled, videoEnabled, localTracksReady, setupLocalTracks, joinRoom, defaultRoomName, defaultIdentity]);
 
   const leaveRoom = useCallback(() => {
     // ปิดห้องและอุปกรณ์ทั้งหมดทันทีตามที่ร้องขอ
@@ -456,6 +466,7 @@ function TwilioVideoRoom({
     autoJoinStateRef.current = { ...autoJoinStateRef.current, attempted: false, attempts: 0, manualOnly: false };
     setAudioEnabled(false);
     setVideoEnabled(false);
+    setLocalTracksReady(false);
     
     // Clear remote video containers
     const remoteContainer = document.getElementById('remote-videos-container');
@@ -471,6 +482,9 @@ function TwilioVideoRoom({
     const ok = await twilioVideoService.toggleAudio(target);
     if (ok) {
       setAudioEnabled(target);
+      if (target && !localTracksReady) {
+        setLocalTracksReady(true);
+      }
       message.info(target ? 'เปิดไมโครโฟน' : 'ปิดไมโครโฟน');
     } else {
       message.error('ไม่สามารถสลับไมโครโฟนได้');
@@ -482,10 +496,20 @@ function TwilioVideoRoom({
     const ok = await twilioVideoService.toggleVideo(target);
     if (ok) {
       setVideoEnabled(target);
+      if (target && !localTracksReady) {
+        setLocalTracksReady(true);
+      }
       message.info(target ? 'เปิดกล้อง' : 'ปิดกล้อง');
       if (target) {
         const containerRef = previewOpen ? localModalVideoRef : localInlineVideoRef;
         try { attachLocalVideoTo(containerRef); } catch (_) {}
+      } else {
+        if (localInlineVideoRef.current) {
+          localInlineVideoRef.current.innerHTML = '';
+        }
+        if (localModalVideoRef.current) {
+          localModalVideoRef.current.innerHTML = '';
+        }
       }
     } else {
       message.error('ไม่สามารถสลับกล้องได้');
@@ -521,24 +545,35 @@ function TwilioVideoRoom({
   useEffect(() => {
     if (!localTracksReady && Array.isArray(twilioVideoService.localTracks) && twilioVideoService.localTracks.length > 0) {
       const videoTrack = twilioVideoService.localTracks.find(t => t.kind === 'video');
-      if (videoTrack && localInlineVideoRef.current) {
+      if (videoTrack && videoEnabled && localInlineVideoRef.current) {
         try { twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true }); } catch (_) {}
       }
       setLocalTracksReady(true);
     }
-  }, [localTracksReady]);
+  }, [localTracksReady, videoEnabled]);
 
   // When modal opens/closes, (re)attach local preview to appropriate container
   useEffect(() => {
     if (previewOpen) {
-      setupLocalTracks().catch(() => {});
+      if (videoEnabled && localTracksReady && localModalVideoRef.current) {
+        const videoTrack = (twilioVideoService.localTracks || []).find((t) => t.kind === 'video');
+        if (videoTrack) {
+          try { twilioVideoService.attachTrackToElement(videoTrack, localModalVideoRef.current, { isLocal: true }); } catch (_) {}
+        }
+      }
     } else {
-      // Re-attach to inline container if not connected view
-      if (localTracksReady && localInlineVideoRef.current) {
-        attachLocalVideoTo(localInlineVideoRef);
+      if (localInlineVideoRef.current) {
+        if (videoEnabled && localTracksReady) {
+          const videoTrack = (twilioVideoService.localTracks || []).find((t) => t.kind === 'video');
+          if (videoTrack) {
+            try { twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true }); } catch (_) {}
+          }
+        } else {
+          localInlineVideoRef.current.innerHTML = '';
+        }
       }
     }
-  }, [previewOpen, localTracksReady, setupLocalTracks, attachLocalVideoTo]);
+  }, [previewOpen, localTracksReady, videoEnabled]);
 
   useEffect(() => {
     const targetKey = `${defaultRoomName}::${defaultIdentity}`;
@@ -570,7 +605,7 @@ function TwilioVideoRoom({
     }
 
     const attemptJoin = async () => {
-      if (!localTracksReady) {
+      if (!localTracksReady && (audioEnabled || videoEnabled)) {
         const cachedTracks = Array.isArray(twilioVideoService.localTracks) ? twilioVideoService.localTracks : [];
         if (cachedTracks.length === 0) {
           try {
@@ -853,7 +888,7 @@ function TwilioVideoRoom({
           <div style={{ width: '100%', height: 420, background: '#000', borderRadius: 8, position: 'relative' }}>
             <div ref={localModalVideoRef} style={{ width: '100%', height: '100%' }} />
             {!localTracksReady && (
-              <div onClick={openPreviewModal} style={{ cursor: 'pointer', position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div onClick={handlePreviewClick} style={{ cursor: 'pointer', position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <VideoCameraAddOutlined style={{ fontSize: 64, color: '#888' }} />
               </div>
             )}
@@ -884,7 +919,13 @@ function TwilioVideoRoom({
           </Space>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Button onClick={closePreviewModal}>ยกเลิก</Button>
-            <Button type="primary" icon={<VideoCameraOutlined />} loading={joinPending} disabled={!localTracksReady} onClick={confirmJoinFromPreview}>
+            <Button
+              type="primary"
+              icon={<VideoCameraOutlined />}
+              loading={joinPending}
+              disabled={(audioEnabled || videoEnabled) && !localTracksReady}
+              onClick={confirmJoinFromPreview}
+            >
               เข้าร่วมห้อง
             </Button>
           </div>

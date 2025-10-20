@@ -5,8 +5,7 @@ const { emitToUser } = require('../socket');
 const PDFDocument = require('pdfkit');
 
 const router = express.Router();
-const SUMMARY_BUCKET = process.env.SUMMARY_STORAGE_BUCKET || 'attachments';
-let ensuredBuckets = new Set();
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BACKEND_URL || process.env.APP_BACKEND_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 const safeText = (value) => {
   if (value === null || value === undefined) return '-';
@@ -47,24 +46,88 @@ const enrichPrescriptionItems = async (items) => {
   }));
 };
 
-const ensureBucket = async (bucket) => {
-  if (!bucket) throw new Error('Missing bucket name');
-  if (ensuredBuckets.has(bucket)) return;
-  const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-  if (listError) {
-    // If listing buckets fails due to RLS, propagate (service role should bypass)
-    throw listError;
+const cleanIdFragment = (value) => {
+  if (!value) return 'unknown';
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, '');
+};
+
+const loadSummaryContext = async (consultationId) => {
+  const { data: consultationRow, error: consultationError } = await supabase
+    .from('consultations')
+    .select('*')
+    .eq('consultation_id', consultationId)
+    .maybeSingle();
+  if (consultationError) throw consultationError;
+  if (!consultationRow) return { consultationRow: null };
+
+  const { data: dischargeSummary, error: dischargeError } = await supabase
+    .from('discharge_summaries')
+    .select('*')
+    .eq('consultation_id', consultationId)
+    .maybeSingle();
+  if (dischargeError) throw dischargeError;
+
+  let caseRow = null;
+  if (consultationRow.case_id) {
+    const { data: caseDataRow, error: caseError } = await supabase
+      .from('patient_cases')
+      .select('*')
+      .eq('case_id', consultationRow.case_id)
+      .maybeSingle();
+    if (caseError) throw caseError;
+    caseRow = caseDataRow || null;
   }
-  if (!Array.isArray(buckets) || !buckets.find((b) => b?.name === bucket)) {
-    const { error: createError } = await supabase.storage.createBucket(bucket, {
-      public: false,
-      fileSizeLimit: 50 * 1024 * 1024, // 50 MB
-    });
-    if (createError && !String(createError.message || '').includes('already exists')) {
-      throw createError;
-    }
+
+  let patientRow = null;
+  if (consultationRow.patient_id) {
+    const { data: patientData, error: patientError } = await supabase
+      .from('app_users')
+      .select('user_id, display_name, phone')
+      .eq('user_id', consultationRow.patient_id)
+      .maybeSingle();
+    if (patientError) throw patientError;
+    patientRow = patientData || null;
   }
-  ensuredBuckets.add(bucket);
+
+  let doctorRow = null;
+  if (consultationRow.doctor_id) {
+    const { data: doctorData, error: doctorError } = await supabase
+      .from('app_users')
+      .select('user_id, display_name, phone')
+      .eq('user_id', consultationRow.doctor_id)
+      .maybeSingle();
+    if (doctorError) throw doctorError;
+    doctorRow = doctorData || null;
+  }
+
+  let prescription = null;
+  let prescriptionItems = [];
+  if (dischargeSummary?.prescription_id) {
+    const { data: prescriptionRow, error: prescriptionError } = await supabase
+      .from('prescriptions')
+      .select('*')
+      .eq('prescription_id', dischargeSummary.prescription_id)
+      .maybeSingle();
+    if (prescriptionError) throw prescriptionError;
+    prescription = prescriptionRow || null;
+
+    const { data: items, error: itemsError } = await supabase
+      .from('prescription_items')
+      .select('*')
+      .eq('prescription_id', dischargeSummary.prescription_id);
+    if (itemsError) throw itemsError;
+    prescriptionItems = Array.isArray(items) ? items : [];
+  }
+
+  return {
+    consultationRow,
+    dischargeSummary,
+    caseRow,
+    patientRow,
+    doctorRow,
+    prescription,
+    prescriptionItems,
+  };
 };
 
 const buildSummaryPdf = ({ consultationId, consultation, caseData, patient, doctor, dischargeSummary, prescription, items }) => new Promise((resolve, reject) => {
@@ -271,78 +334,19 @@ router.post('/:consultationId/summary/complete', async (req, res) => {
   try {
     const { consultationId } = req.params;
     if (!consultationId) return res.status(400).json({ error: 'Missing consultationId' });
+    const {
+      consultationRow,
+      dischargeSummary,
+      caseRow,
+      patientRow,
+      doctorRow,
+      prescription,
+      prescriptionItems,
+    } = await loadSummaryContext(consultationId);
 
-    const { data: consultationRow, error: consultationError } = await supabase
-      .from('consultations')
-      .select('*')
-      .eq('consultation_id', consultationId)
-      .maybeSingle();
-    if (consultationError) throw consultationError;
     if (!consultationRow) return res.status(404).json({ error: 'ไม่พบข้อมูลการปรึกษา' });
-
-    const { data: dischargeSummary, error: dischargeError } = await supabase
-      .from('discharge_summaries')
-      .select('*')
-      .eq('consultation_id', consultationId)
-      .maybeSingle();
-    if (dischargeError) throw dischargeError;
     if (!dischargeSummary) {
       return res.status(400).json({ error: 'ยังไม่ได้บันทึกสรุปผลและใบสั่งยา' });
-    }
-
-    let caseRow = null;
-    if (consultationRow.case_id) {
-      const { data: caseDataRow, error: caseError } = await supabase
-        .from('patient_cases')
-        .select('*')
-        .eq('case_id', consultationRow.case_id)
-        .maybeSingle();
-      if (!caseError && caseDataRow) {
-        caseRow = caseDataRow;
-      }
-    }
-
-    let patientRow = null;
-    if (consultationRow.patient_id) {
-      const { data: patientData, error: patientError } = await supabase
-        .from('app_users')
-        .select('user_id, display_name, phone')
-        .eq('user_id', consultationRow.patient_id)
-        .maybeSingle();
-      if (!patientError && patientData) {
-        patientRow = patientData;
-      }
-    }
-
-    let doctorRow = null;
-    if (consultationRow.doctor_id) {
-      const { data: doctorData, error: doctorError } = await supabase
-        .from('app_users')
-        .select('user_id, display_name, phone')
-        .eq('user_id', consultationRow.doctor_id)
-        .maybeSingle();
-      if (!doctorError && doctorData) {
-        doctorRow = doctorData;
-      }
-    }
-
-    let prescription = null;
-    let prescriptionItems = [];
-    if (dischargeSummary.prescription_id) {
-      const { data: prescriptionRow, error: prescriptionError } = await supabase
-        .from('prescriptions')
-        .select('*')
-        .eq('prescription_id', dischargeSummary.prescription_id)
-        .maybeSingle();
-      if (prescriptionError) throw prescriptionError;
-      prescription = prescriptionRow || null;
-
-      const { data: items, error: itemsError } = await supabase
-        .from('prescription_items')
-        .select('*')
-        .eq('prescription_id', dischargeSummary.prescription_id);
-      if (itemsError) throw itemsError;
-      prescriptionItems = Array.isArray(items) ? items : [];
     }
 
     const documentMeta = {
@@ -352,17 +356,14 @@ router.post('/:consultationId/summary/complete', async (req, res) => {
       generated_at: new Date().toISOString(),
     };
 
-    const cleanIdFragment = (value) => {
-      if (!value) return 'unknown';
-      return String(value).replace(/[^a-zA-Z0-9_-]/g, '');
-    };
     const storageFileName = `summary-${cleanIdFragment(dischargeSummary.summary_id || consultationId)}.pdf`;
-    const storagePath = `consultation-documents/${consultationId}/summary/${storageFileName}`;
+    const storagePath = `virtual/${storageFileName}`;
+    const publicUrl = `${PUBLIC_BASE_URL}/api/consultations/${consultationId}/summary/pdf`;
 
     const enrichedItems = await enrichPrescriptionItems(prescriptionItems);
     documentMeta.prescription_items = enrichedItems;
 
-    const pdfBuffer = await buildSummaryPdf({
+    await buildSummaryPdf({
       consultationId,
       consultation: consultationRow,
       caseData: caseRow,
@@ -372,23 +373,7 @@ router.post('/:consultationId/summary/complete', async (req, res) => {
       prescription,
       items: enrichedItems,
     });
-
-    await ensureBucket(SUMMARY_BUCKET);
-
-    const { error: uploadError } = await supabase.storage
-      .from(SUMMARY_BUCKET)
-      .upload(storagePath, pdfBuffer, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
-    if (uploadError) throw uploadError;
-
-    const { data: publicUrlData } = supabase.storage
-      .from(SUMMARY_BUCKET)
-      .getPublicUrl(storagePath);
-    const publicUrl = publicUrlData?.publicUrl || null;
-
-    documentMeta.storage_bucket = SUMMARY_BUCKET;
+    documentMeta.storage_bucket = null;
     documentMeta.public_url = publicUrl;
 
     let summaryDocument = null;
@@ -507,6 +492,48 @@ router.post('/:consultationId/paid', async (req, res) => {
     return res.json({ ok: true, consultation: updated });
   } catch (e) {
     console.error('mark paid error', e);
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/:consultationId/summary/pdf', async (req, res) => {
+  try {
+    const { consultationId } = req.params;
+    if (!consultationId) return res.status(400).json({ error: 'Missing consultationId' });
+
+    const {
+      consultationRow,
+      dischargeSummary,
+      caseRow,
+      patientRow,
+      doctorRow,
+      prescription,
+      prescriptionItems,
+    } = await loadSummaryContext(consultationId);
+
+    if (!consultationRow || !dischargeSummary) {
+      return res.status(404).json({ error: 'ยังไม่มีข้อมูลสรุปผลสำหรับการปรึกษานี้' });
+    }
+
+    const enrichedItems = await enrichPrescriptionItems(prescriptionItems);
+    const pdfBuffer = await buildSummaryPdf({
+      consultationId,
+      consultation: consultationRow,
+      caseData: caseRow,
+      patient: patientRow,
+      doctor: doctorRow,
+      dischargeSummary,
+      prescription,
+      items: enrichedItems,
+    });
+
+    const fileName = `summary-${cleanIdFragment(dischargeSummary.summary_id || consultationId)}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(pdfBuffer);
+  } catch (e) {
+    console.error('download summary pdf error', e);
     return res.status(500).json({ error: e.message });
   }
 });
