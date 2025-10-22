@@ -10,24 +10,29 @@ import React, {
 } from "react";
 import { Canvas, useLoader, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
+import { useTranslation, withTranslation } from "react-i18next";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
 
 const EPSILON = 0.008;
 
-const REGIONS = [
-  { id: "head", label: "Head" },
-  { id: "chest", label: "Chest" },
-  { id: "leftArm", label: "Left Arm" },
-  { id: "rightArm", label: "Right Arm" },
-  { id: "leftLeg", label: "Left Leg" },
-  { id: "rightLeg", label: "Right Leg" },
+const REGION_IDS = [
+  "head",
+  "chest",
+  "leftArm",
+  "rightArm",
+  "leftLeg",
+  "rightLeg",
 ];
 
-const REGION_LABELS = REGIONS.reduce((acc, region) => {
-  acc[region.id] = region.label;
-  return acc;
-}, {});
+const DEFAULT_REGION_LABELS = {
+  head: "Head",
+  chest: "Chest",
+  leftArm: "Left Arm",
+  rightArm: "Right Arm",
+  leftLeg: "Left Leg",
+  rightLeg: "Right Leg",
+};
 
 function ensureOverlayStyles() {
   if (typeof document === "undefined") return;
@@ -60,7 +65,7 @@ const defaultModelUrl = (() => {
   return `${base}HumanBody.obj`;
 })();
 
-function computeRegions(bounds) {
+function computeRegions(bounds, labels = DEFAULT_REGION_LABELS) {
   if (!bounds) return [];
 
   const size = new THREE.Vector3();
@@ -77,19 +82,19 @@ function computeRegions(bounds) {
   return [
     {
       id: "head",
-      label: REGION_LABELS.head,
+      label: labels.head,
       position: [center.x, bounds.max.y - headHeight / 2, center.z],
       dimensions: [width * 0.48, headHeight, depth],
     },
     {
       id: "chest",
-      label: REGION_LABELS.chest,
+      label: labels.chest,
       position: [center.x, bounds.max.y - headHeight - torsoHeight / 2, center.z],
       dimensions: [width * 0.6, torsoHeight, depth],
     },
     {
       id: "leftArm",
-      label: REGION_LABELS.leftArm,
+      label: labels.leftArm,
       position: [
         bounds.min.x + width * 0.2,
         bounds.max.y - headHeight - torsoHeight * 0.2,
@@ -99,7 +104,7 @@ function computeRegions(bounds) {
     },
     {
       id: "rightArm",
-      label: REGION_LABELS.rightArm,
+      label: labels.rightArm,
       position: [
         bounds.max.x - width * 0.2,
         bounds.max.y - headHeight - torsoHeight * 0.2,
@@ -109,20 +114,20 @@ function computeRegions(bounds) {
     },
     {
       id: "leftLeg",
-      label: REGION_LABELS.leftLeg,
+      label: labels.leftLeg,
       position: [center.x - width * 0.15, bounds.min.y + legsHeight / 2, center.z],
       dimensions: [width * 0.35, legsHeight * 0.9, depth],
     },
     {
       id: "rightLeg",
-      label: REGION_LABELS.rightLeg,
+      label: labels.rightLeg,
       position: [center.x + width * 0.15, bounds.min.y + legsHeight / 2, center.z],
       dimensions: [width * 0.35, legsHeight * 0.9, depth],
     },
   ];
 }
 
-function LoadingFallback() {
+function LoadingFallback({ message }) {
   return (
     <div
       style={{
@@ -147,7 +152,7 @@ function LoadingFallback() {
           animation: "spin 1s linear infinite",
         }}
       />
-      <div style={{ opacity: 0.9 }}>Loading 3D Model…</div>
+      <div style={{ opacity: 0.9 }}>{message}</div>
       <style>{`
         @keyframes spin { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
       `}</style>
@@ -171,6 +176,7 @@ class ModelErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      const { t } = this.props;
       return (
         <div
           style={{
@@ -187,9 +193,12 @@ class ModelErrorBoundary extends React.Component {
           }}
         >
           <div style={{ fontSize: 48 }}>🤖</div>
-          <div>Could not load 3D model.</div>
+          <div>{t("MODEL_LOAD_FAILED", "Could not load 3D model.")}</div>
           <div style={{ fontSize: 12, opacity: 0.8 }}>
-            Please check if the model file exists and is accessible.
+            {t(
+              "MODEL_LOAD_HINT",
+              "Please check if the model file exists and is accessible."
+            )}
           </div>
         </div>
       );
@@ -198,6 +207,8 @@ class ModelErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
+
+const TranslatedModelErrorBoundary = withTranslation()(ModelErrorBoundary);
 
 const Model = forwardRef(function Model({ url, onReady }, ref) {
   const object = useLoader(OBJLoader, url);
@@ -242,6 +253,7 @@ function HumanBody({
   modelUrl,
   height = 580,
 }) {
+  const { t } = useTranslation();
   ensureOverlayStyles();
 
   const [selection, setSelection] = useState(() => new Set(selectedParts));
@@ -253,6 +265,18 @@ function HumanBody({
     [rotationDeg]
   );
   const modelRef = useRef(null);
+
+  const regionLabels = useMemo(
+    () => ({
+      head: t("BODY_REGION_HEAD", "Head"),
+      chest: t("BODY_REGION_CHEST", "Chest"),
+      leftArm: t("BODY_REGION_LEFT_ARM", "Left Arm"),
+      rightArm: t("BODY_REGION_RIGHT_ARM", "Right Arm"),
+      leftLeg: t("BODY_REGION_LEFT_LEG", "Left Leg"),
+      rightLeg: t("BODY_REGION_RIGHT_LEG", "Right Leg"),
+    }),
+    [t]
+  );
 
   useEffect(() => {
     const next = new Set(selectedParts || []);
@@ -343,8 +367,8 @@ function HumanBody({
   );
 
   const regionData = useMemo(
-    () => (bounds ? computeRegions(bounds) : []),
-    [bounds]
+    () => (bounds ? computeRegions(bounds, regionLabels) : []),
+    [bounds, regionLabels]
   );
 
   useEffect(() => {
@@ -367,7 +391,7 @@ function HumanBody({
       <Html key={marker.id} position={marker.position} transform={false}>
         <div
           className="human-body-marker"
-          title={REGION_LABELS[marker.id] || marker.id}
+          title={regionLabels[marker.id] || marker.id}
         />
       </Html>
     ));
@@ -414,9 +438,17 @@ function HumanBody({
   return (
     <div style={containerStyles}>
       <div style={canvasWrapperStyles}>
-      <ModelErrorBoundary>
+      <TranslatedModelErrorBoundary>
         <Canvas camera={{ position: [0, 1.6, 3.4], fov: 45 }} shadows>
-          <Suspense fallback={<LoadingFallback />}>
+          <Suspense
+            fallback={
+              <Html center>
+                <LoadingFallback
+                  message={t("LOADING_3D_MODEL", "Loading 3D Model…")}
+                />
+              </Html>
+            }
+          >
             <ambientLight intensity={0.7} />
             <directionalLight position={[5, 6, 4]} intensity={0.85} castShadow />
             <pointLight position={[-4, 3, 2]} intensity={0.4} />
@@ -447,11 +479,13 @@ function HumanBody({
             />
           </Suspense>
         </Canvas>
-      </ModelErrorBoundary>
+      </TranslatedModelErrorBoundary>
       </div>
 
       <div style={sliderStyles}>
-        <span style={{ fontSize: 12, fontWeight: 600 }}>หมุนโมเดล</span>
+        <span style={{ fontSize: 12, fontWeight: 600 }}>
+          {t("ROTATE_MODEL", "Rotate model")}
+        </span>
         <input
           type="range"
           min="-180"
@@ -466,25 +500,26 @@ function HumanBody({
       </div>
 
       <div style={buttonsWrapperStyles}>
-        {REGIONS.map((region) => {
-          const active = selection.has(region.id);
+        {REGION_IDS.map((regionId) => {
+          const active = selection.has(regionId);
           const disabled = !bounds && !active;
+          const label = regionLabels[regionId] || regionId;
 
           return (
             <button
               type="button"
-              key={region.id}
+              key={regionId}
               disabled={disabled}
               onClick={() => {
                 if (disabled) return;
                 if (active) {
-                  toggleSelection(region.id);
+                  toggleSelection(regionId);
                 } else if (bounds) {
-                  const match = regionData.find((r) => r.id === region.id);
+                  const match = regionData.find((r) => r.id === regionId);
                   const fallback = rotatePosition(match?.position);
-                  toggleSelection(region.id, undefined, fallback);
+                  toggleSelection(regionId, undefined, fallback);
                 } else {
-                  toggleSelection(region.id);
+                  toggleSelection(regionId);
                 }
               }}
               style={{
@@ -501,7 +536,7 @@ function HumanBody({
                 opacity: disabled ? 0.6 : 1,
               }}
             >
-              {region.label}
+              {label}
             </button>
           );
         })}

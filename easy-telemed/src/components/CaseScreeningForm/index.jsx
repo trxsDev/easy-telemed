@@ -1,9 +1,26 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
-import { Steps, Button, Card, message, Upload, Tag, Radio, Select, Input } from "antd";
-import { LeftOutlined, RightOutlined, InboxOutlined } from "@ant-design/icons";
+import {
+  Steps,
+  Button,
+  Card,
+  message,
+  Upload,
+  Tag,
+  Select,
+  Input,
+  Slider,
+} from "antd";
+import {
+  LeftOutlined,
+  RightOutlined,
+  InboxOutlined,
+  SmileOutlined,
+  MehOutlined,
+  FrownOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import Base from "./Section/Base";
-import Screen from "./Section/Screen";
+// import Base from "./Section/Base";
+// import Screen from "./Section/Screen";
 import HumanBody from "../3D/HumanBody";
 // Supabase calls have been moved to backend APIs
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
@@ -35,17 +52,17 @@ const SpecialtyStep = React.memo(
 
     return (
       <div style={{ padding: 20 }}>
-        <h3 style={{ marginBottom: 16 }}>{t("SELECT_SPECIALTY", "เลือกแผนกที่ต้องการพบ")}</h3>
+        <h3 style={{ marginBottom: 16 }}>{t("SELECT_SPECIALTY", "Choose a specialty")}</h3>
         <p style={{ color: "#666", marginBottom: 24 }}>
           {t(
             "SPECIALTY_HINT",
-            "ระบบจะแนะนำเฉพาะแผนกที่มีแพทย์ออนไลน์อยู่ในขณะนี้"
+            "We only show specialties with doctors currently online"
           )}
         </p>
 
         {loading ? (
           <div style={{ textAlign: "center", padding: "48px 0" }}>
-            <span>{t("LOADING_SPECIALTIES", "กำลังตรวจสอบแพทย์ที่ออนไลน์...")}</span>
+            <span>{t("LOADING_SPECIALTIES", "Checking which doctors are currently online...")}</span>
           </div>
         ) : (
           <div
@@ -101,10 +118,10 @@ const SpecialtyStep = React.memo(
                     <Tag color={hasActiveDoctor ? "green" : "default"}>
                       {hasActiveDoctor
                         ? t("ACTIVE_DOCTORS_COUNT", {
-                            defaultValue: "มีแพทย์ออนไลน์ {{count}} คน",
+                            defaultValue: "Doctors online: {{count}}",
                             count: activeCount,
                           })
-                        : t("NO_ACTIVE_DOCTOR", "ยังไม่มีแพทย์ออนไลน์")}
+                        : t("NO_ACTIVE_DOCTOR", "No doctors online yet")}
                     </Tag>
                   </div>
                 </Button>
@@ -123,7 +140,7 @@ const SpecialtyStep = React.memo(
             color: "#389e0d",
           }}
         >
-          {t("TOTAL_ACTIVE_DOCTORS", "แพทย์ที่ออนไลน์ทั้งหมด")}: {totalActiveDoctors}
+          {t("TOTAL_ACTIVE_DOCTORS", "Doctors online in total")}: {totalActiveDoctors}
         </div>
       </div>
     );
@@ -140,7 +157,24 @@ const SymptomsStep = React.memo(
     selectedBodyParts,
     t,
   }) => {
-    const painLevels = useMemo(() => Array.from({ length: 10 }, (_, idx) => idx + 1), []);
+    const sliderMarks = useMemo(
+      () => ({
+        0: "0",
+        5: "5",
+        10: "10",
+      }),
+      []
+    );
+    const sliderValue = typeof painLevel === "number" ? painLevel : 0;
+    const sliderColor = useMemo(() => {
+      const clamp = Math.min(Math.max(sliderValue / 10, 0), 1);
+      const start = { r: 82, g: 196, b: 26 }; // #52c41a
+      const end = { r: 255, g: 77, b: 79 }; // #ff4d4f
+      const r = Math.round(start.r + (end.r - start.r) * clamp);
+      const g = Math.round(start.g + (end.g - start.g) * clamp);
+      const b = Math.round(start.b + (end.b - start.b) * clamp);
+      return `rgb(${r}, ${g}, ${b})`;
+    }, [sliderValue]);
 
     return (
       <div style={{ padding: 20 }}>
@@ -200,36 +234,48 @@ const SymptomsStep = React.memo(
         )}
 
         <div style={{ marginBottom: 24 }}>
-          <label
-            style={{ display: "block", marginBottom: 8, fontWeight: "bold" }}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 8,
+            }}
           >
-            {t("PAIN_LEVEL", "Pain Level (1-10)")}
-          </label>
-          <Radio.Group value={painLevel} onChange={(e) => setPainLevel(e.target.value)}>
-            {painLevels.map((level) => (
-              <Radio.Button
-                key={level}
-                value={level}
-                style={{
-                  width: 64,
-                  height: 64,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: 12,
-                  marginRight: 16,
-                  marginBottom: 16,
-                  fontWeight: 600,
-                  fontSize: 16,
-                }}
-                aria-label={t("PAIN_LEVEL_SELECTION", "Pain level {{level}}", { level })}
-              >
-                {level}
-              </Radio.Button>
-            ))}
-          </Radio.Group>
+            <label style={{ fontWeight: "bold" }}>
+              {t("PAIN_LEVEL", "Pain Level (0-10)")}
+            </label>
+            <span style={{ fontWeight: 600, color: "#1890ff" }}>
+              {sliderValue}/10
+            </span>
+          </div>
+          <Slider
+            min={0}
+            max={10}
+            step={1}
+            marks={sliderMarks}
+            value={sliderValue}
+            onChange={(value) => setPainLevel(value)}
+            tooltip={{ formatter: (value) => `${value}/10` }}
+            trackStyle={[
+              {
+                backgroundColor: sliderColor,
+                height: 8,
+              },
+            ]}
+            handleStyle={[
+              {
+                borderColor: sliderColor,
+                boxShadow: `0 0 0 2px rgba(24, 144, 255, 0.1)`,
+              },
+            ]}
+            railStyle={{
+              height: 8,
+              background: "linear-gradient(90deg, #52c41a 0%, #faad14 50%, #ff4d4f 100%)",
+            }}
+          />
           <small style={{ color: "#666", marginTop: 4, display: "block" }}>
-            1 = Minimal pain, 10 = Severe pain
+            0 = No pain, 10 = Severe pain
           </small>
         </div>
       </div>
@@ -286,6 +332,34 @@ const SeverityStep = React.memo(
       return false; // ป้องกันการอัพโหลดทันที
     };
 
+    const severityOptions = useMemo(
+      () => [
+        {
+          value: "mild",
+          label: t("MILD", "Mild"),
+          color: "#52c41a",
+          Icon: SmileOutlined,
+        },
+        {
+          value: "medium",
+          label: t("MODERATE", "Moderate"),
+          color: "#faad14",
+          Icon: MehOutlined,
+        },
+        {
+          value: "severe",
+          label: t("SEVERE", "Severe"),
+          color: "#ff4d4f",
+          Icon: FrownOutlined,
+        },
+      ],
+      [t]
+    );
+
+    const currentSeverity =
+      severityOptions.find((option) => option.value === severity) ||
+      severityOptions[1];
+
     return (
       <div style={{ padding: 20 }}>
         <h3>{t("SEVERITY_DETAILS", "Severity & Additional Details")}</h3>
@@ -296,11 +370,41 @@ const SeverityStep = React.memo(
           >
             {t("SEVERITY_LEVEL", "Overall Severity")} *
           </label>
-          <Radio.Group value={severity} onChange={(e) => setSeverity(e.target.value)} buttonStyle="solid">
-            <Radio.Button value="mild">{t("MILD", "Mild")}</Radio.Button>
-            <Radio.Button value="medium">{t("MODERATE", "Moderate")}</Radio.Button>
-            <Radio.Button value="severe">{t("SEVERE", "Severe")}</Radio.Button>
-          </Radio.Group>
+          <div style={{ display: "flex", gap: 12, marginBottom: 8 }}>
+            {severityOptions.map(({ value, label, color, Icon }) => {
+              const isActive = severity === value;
+              return (
+                <Button
+                  key={value}
+                  type={isActive ? "primary" : "default"}
+                  onClick={() => setSeverity(value)}
+                  icon={<Icon />}
+                  style={{
+                    flex: 1,
+                    height: 60,
+                    borderRadius: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    fontWeight: 600,
+                    borderColor: color,
+                    backgroundColor: isActive ? color : "#fff",
+                    color: isActive ? "#fff" : color,
+                    boxShadow: isActive
+                      ? "0 8px 18px rgba(0,0,0,0.1)"
+                      : "0 4px 12px rgba(0,0,0,0.05)",
+                    transition: "all .2s ease",
+                  }}
+                >
+                  {label}
+                </Button>
+              );
+            })}
+          </div>
+          <span style={{ fontWeight: 600, color: currentSeverity.color }}>
+            {currentSeverity.label}
+          </span>
         </div>
 
         <div style={{ marginBottom: 24 }}>
@@ -370,9 +474,9 @@ const SeverityStep = React.memo(
             {selectedFiles.length >= 3 ? null : (
               <div>
                 <InboxOutlined style={{ fontSize: 24, marginBottom: 8 }} />
-                <div>{t("SELECT_IMAGE", "เลือกรูปภาพ")}</div>
+                <div>{t("SELECT_IMAGE", "Choose image")}</div>
                 <div style={{ fontSize: 12, color: "#666" }}>
-                  {t("MAX_3_IMAGES", "สูงสุด 3 รูป, ไม่เกิน 5MB")}
+                  {t("MAX_3_IMAGES", "Up to 3 images, no larger than 5MB")}
                 </div>
               </div>
             )}
@@ -399,7 +503,7 @@ function CaseScreeningForm() {
   // แยก state เพื่อลด re-render
   const [symptomsText, setSymptomsText] = useState("");
   const [severity, setSeverity] = useState("medium");
-  const [painLevel, setPainLevel] = useState(null);
+  const [painLevel, setPainLevel] = useState(0);
   const [duration, setDuration] = useState("");
   const [additionalInfo, setAdditionalInfo] = useState("");
   const [selectedBodyParts, setSelectedBodyParts] = useState([]);
@@ -442,7 +546,7 @@ function CaseScreeningForm() {
       message.error(
         t(
           "FAILED_FETCH_SPECIALTY",
-          "ไม่สามารถโหลดข้อมูลแผนกและแพทย์ที่พร้อมให้บริการได้"
+          "Unable to load specialties. Please try again."
         )
       );
     }
@@ -555,7 +659,7 @@ function CaseScreeningForm() {
     if (currentStep === 0) {
       if (!selectedSpecialtyId) {
         message.error(
-          t("SPECIALTY_REQUIRED", "กรุณาเลือกแผนกที่ต้องการพบก่อน")
+          t("SPECIALTY_REQUIRED", "Please select a specialty before continuing")
         );
         return;
       }
@@ -565,18 +669,18 @@ function CaseScreeningForm() {
         message.warning(
           t(
             "SPECIALTY_NO_DOCTOR",
-            "แผนกที่เลือกยังไม่มีแพทย์ออนไลน์ กรุณาเลือกแผนกอื่น"
+            "This specialty currently has no doctors online"
           )
         );
         return;
       }
     } else if (currentStep === 1) {
       if (!symptomsText?.trim()) {
-        message.error(
-          t(
-            "SYMPTOMS_REQUIRED",
-            "Please describe your symptoms before proceeding"
-          )
+      message.error(
+        t(
+          "SYMPTOMS_REQUIRED",
+          "Please describe your symptoms before proceeding"
+        )
         );
         return;
       }
@@ -601,16 +705,20 @@ function CaseScreeningForm() {
   const handleSubmit = async () => {
     if (isSubmitting || casesState.submitting) return;
     if (!user?.user_id) {
-      message.error("กรุณาเข้าสู่ระบบก่อนส่งข้อมูล");
+      message.error(
+        t("LOGIN_REQUIRED", "Please sign in before submitting your case")
+      );
       return;
     }
     if (!selectedSpecialty) {
-      message.error(t("SPECIALTY_REQUIRED", "กรุณาเลือกแผนกที่ต้องการพบก่อน"));
+      message.error(
+        t("SPECIALTY_REQUIRED", "Please select a specialty before continuing")
+      );
       return;
     }
 
     setIsSubmitting(true);
-    message.loading('กำลังบันทึกข้อมูล...', 0);
+    message.loading(t("SAVING_CASE", "Saving case..."), 0);
     try {
       const resultAction = await dispatch(
         submitPatientCase({
@@ -823,7 +931,7 @@ function CaseScreeningForm() {
 
             {selectedSpecialty && (
               <div style={{ marginBottom: 16 }}>
-                <strong>{t("SELECTED_SPECIALTY", "แผนกที่เลือก")}:</strong>
+                <strong>{t("SELECTED_SPECIALTY", "Selected Specialty")}:</strong>
                 <span
                   style={{
                     marginLeft: 8,
@@ -838,14 +946,14 @@ function CaseScreeningForm() {
                 </span>
                 <span style={{ marginLeft: 12, color: "#888", fontSize: 12 }}>
                   {t("ACTIVE_DOCTORS_LABEL", {
-                    defaultValue: "แพทย์ที่พร้อมให้บริการ {{count}} คน",
+                    defaultValue: "Doctors available {{count}}",
                     count: (formData.available_doctors || []).length,
                   })}
                 </span>
               </div>
             )}
 
-            {formData.painLevel && (
+            {formData.painLevel !== null && formData.painLevel !== undefined && (
               <div style={{ marginBottom: 16 }}>
                 <strong>{t("PAIN_LEVEL", "Pain Level")}:</strong>
                 <span
@@ -979,7 +1087,11 @@ function CaseScreeningForm() {
             </p>
             {selectedFiles.length > 0 && (
               <p style={{ margin: "8px 0 0 0", color: "#1890ff", fontSize: 14 }}>
-                📎 {t("IMAGES_WILL_BE_UPLOADED", `${selectedFiles.length} รูปภาพจะถูกอัพโหลดเมื่อกดส่ง`)}
+                📎{" "}
+                {t("IMAGES_WILL_BE_UPLOADED", {
+                  count: selectedFiles.length,
+                  defaultValue: "{{count}} image(s) will be uploaded when you submit.",
+                })}
               </p>
             )}
           </div>
@@ -1105,7 +1217,11 @@ function CaseScreeningForm() {
               </Button>
 
               <span style={{ color: "#666", fontSize: 14 }}>
-                {t("STEP_COUNT", `Step ${currentStep + 1} of ${steps.length}`)}
+                {t("STEP_COUNT", {
+                  current: currentStep + 1,
+                  total: steps.length,
+                  defaultValue: "Step {{current}} of {{total}}",
+                })}
               </span>
 
               {currentStep < steps.length - 1 ? (
@@ -1113,14 +1229,14 @@ function CaseScreeningForm() {
                   {t("NEXT", "Next")} <RightOutlined />
                 </Button>
               ) : (
-                <Button 
-                  type="primary" 
-                  onClick={handleSubmit} 
+                <Button
+                  type="primary"
+                  onClick={handleSubmit}
                   size="large"
                   loading={isSubmitting}
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? t("SUBMITTING", "กำลังส่ง...") : t("SUBMIT", "Submit")}
+                  {isSubmitting ? t("SUBMITTING", "Submitting...") : t("SUBMIT", "Submit")}
                 </Button>
               )}
             </div>
