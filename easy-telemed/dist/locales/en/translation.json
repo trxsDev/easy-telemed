@@ -1,0 +1,170 @@
+{
+    "welcome": "Welcome to our application",
+    "doctorRegister": "Doctor Register",
+    "signIn": "Sign In",
+    "USER_DASHBOARD": "User Dashboard",
+    "PATIENT": "Patient",
+    "DOCTOR": "Doctor",
+    "VIEW": "View",
+    "NO": "No",
+    "FULLNAME": "Full Name",
+       "EMAIL": "Email",
+    "CREDENTIAL": "Credential",
+    "VERIFIED": "Verified",
+    "WELCOME": "Welcome",
+    "GREETING": "How are you today?",
+    "SIGNIN_GREETING": "Welcome back!",
+    "doctorRegisterForm": {
+        "title": "Thanks for your interest",
+        "subtitle": "Please sign up to your doctor account",
+        "emailLabel": "Email Address",
+        "emailPlaceholder": "Enter your email",
+        "emailRequired": "Please input your email!",
+        "emailInvalid": "Please enter a valid email!",
+        "passwordLabel": "Password",
+        "passwordPlaceholder": "Enter your password",
+        "passwordRequired": "Please input your password!",
+        "submit": "Register as Doctor",
+        "submitLoading": "Creating...",
+        "successMessage": "Doctor account created"
+    },
+    "registerForm": {
+        "title": "Create a new user account",
+        "subtitle": "Provision access and assign their role.",
+        "emailLabel": "Email address",
+        "emailPlaceholder": "name@example.com",
+        "emailRequired": "Please input email",
+        "emailInvalid": "Invalid email format",
+        "roleLabel": "Role",
+        "rolePlaceholder": "Choose a role",
+        "roleRequired": "Select role",
+        "passwordLabel": "Password",
+        "passwordPlaceholder": "Enter password",
+        "passwordRequired": "Enter password",
+        "passwordMin": "At least 6 characters",
+        "submit": "Create user",
+        "submitLoading": "Creating...",
+        "roles": {
+            "doctor": "Doctor",
+            "patient": "Patient"
+        },
+        "notification": {
+            "successTitle": "Registration successful",
+            "successDescription": "Account created successfully. Please check the email to verify the account.",
+            "errorTitle": "Registration failed",
+            "errorDescription": "Unable to create the account."
+        }
+    },
+    "registerPage": {
+        "headers": {
+            "createTitle": "Register (Admin)",
+            "createSubtitle": "Create a new user account",
+            "requestsTitle": "Doctor requests",
+            "requestsSubtitle": "Review pending doctor role requests"
+        },
+        "buttons": {
+            "createUser": "Create new user",
+            "doctorRequests": "Doctor requests"
+        }
+    },
+    "signUpForm": {
+        "title": "Create account",
+        "subtitle": "Join us today – it's quick and easy",
+        "emailLabel": "Email address",
+        "emailPlaceholder": "Enter your email",
+        "emailRequired": "Please input your email!",
+        "emailInvalid": "Please enter a valid email!",
+        "passwordLabel": "Password",
+        "passwordPlaceholder": "Enter your password",
+        "passwordRequired": "Please input your password!",
+        "submit": "Create account",
+        "submitLoading": "Creating...",
+        "successMessage": "Account created successfully! Please check your email to verify.",
+        "genericError": "An error occurred during signup",
+        "haveAccount": "Already have an account?",
+        "signInLink": "Sign in"
+    },
+    "signInForm": {
+        "title": "Welcome back",
+        "subtitle": "Please sign in to your account",
+        "emailLabel": "Email address",
+        "emailPlaceholder": "Enter your email",
+        "emailRequired": "Please input your email!",
+        "emailInvalid": "Please enter a valid email!",
+        "passwordLabel": "Password",
+        "passwordPlaceholder": "Enter your password",
+        "passwordRequired": "Please input your password!",
+        "submit": "Sign in",
+        "genericError": "An error occurred during sign in.",
+        "noAccount": "Don't have an account?",
+        "signUpLink": "Create account"
+    },
+    "landing": {
+        "title": "Create an experience",
+        "title-part2": "with easy to use telemedicine",
+        "subtitle": "Bring scheduling, video visits, notes, and patient communication into a single, modern workspace.",
+        "ctaPrimary": "Sign in to start consulting",
+        "ctaSecondary": "Create a new account",
+        "statsPatients": "Always ready for on-demand consultations",
+        "statsDoctors": "Average time from booking to live session",
+        "statsSatisfaction": "Platform uptime and reliability",
+        "heroCard": {
+            "title": "Live Telemed Session",
+            "bullet": {
+                "video": "Adaptive video quality that matches the patient’s connection",
+                "docs": "Collaborative notes and shared files in real time",
+                "security": "End-to-end encrypted communication"
+            }
+        },
+        "trustedBy": "Trusted by leading healthcare innovators",
+        "features": {
+            "title": "Designed for the next era of connected care",
+            "subtitle": "A neutral, friendly interface that adapts to hospitals, clinics, and digital health teams of any size.",
+            "items": {
+                "queue": {
+                    "title": "Streamlined consultation queues",
+                    "description": "Coordinate bookings, video calls, and follow-up summaries from one place so care teams stay in sync."
+                },
+                "security": {
+                    "title": "Secure and compliant by design",
+                    "description": "Protect sensitive health data with built-in encryption, role-based access, and audit-ready logs."
+                },
+                "integration": {
+                    "title": "Connect with existing systems easily",
+                    "description": "Use flexible APIs and export tools to bridge EMR platforms, billing software, and in-house workflows."
+                }
+            }
+        },
+        "steps": {
+            "title": "Launch your telemed service in three simple steps",
+            "subtitle": "Onboard patients, configure care pathways, and connect your clinical team without friction.",
+            "items": {
+                "register": {
+                    "title": "Register patients",
+                    "description": "Capture essential demographics and intake information in minutes."
+                },
+                "consult": {
+                    "title": "Join the virtual consult",
+                    "description": "Match patients with the right specialist and launch a secure video visit instantly."
+                },
+                "summary": {
+                    "title": "Deliver guidance & summaries",
+                    "description": "Provide treatment plans, prescriptions, and next steps in one consolidated record."
+                }
+            },
+            "previewTitle": "Post-consultation summary",
+            "previewSubtitle": "Confirm the diagnosis, plan, and follow-up actions in a single document.",
+            "previewList": {
+                "plan": "Diagnosis & Care Plan",
+                "medication": "Medications & Dosages",
+                "reminder": "Follow-up Reminders"
+            }
+        },
+        "cta": {
+            "title": "Ready to support your patients at every touchpoint",
+            "subtitle": "Join Easy Telemed and deliver continuous, coordinated care with confidence.",
+            "startNow": "Start now",
+            "createAccount": "Create a provider account"
+        }
+    }
+}

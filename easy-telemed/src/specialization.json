@@ -1,0 +1,17 @@
+[
+    {
+        "id": 1,
+        "name": "Family Medicine",
+        "name_th": "เวชศาสตร์ครอบครัว"
+    },
+    {
+        "id": 2,
+        "name": "General Practice",
+        "name_th": "แพทย์ทั่วไป"
+    },
+    {
+        "id": 3,
+        "name": "Pediatrics",
+        "name_th": "กุมารเวชศาสตร์"
+    }
+]

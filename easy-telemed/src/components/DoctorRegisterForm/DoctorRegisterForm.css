@@ -1,0 +1,40 @@
+.doctor-register {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  padding: 64px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.doctor-register__video {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  opacity: 0.3;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.doctor-register__overlay {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(102, 126, 234, 0.8),
+    rgba(132, 222, 156, 0.72)
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+.doctor-register > .ant-card {
+  position: relative;
+  z-index: 2;
+  max-width: 520px;
+  width: 100%;
+}

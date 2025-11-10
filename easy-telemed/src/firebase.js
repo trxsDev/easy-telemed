@@ -22,13 +22,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 // Analytics only works in the browser environment; guard in case of future SSR
-let analytics; // eslint-disable-line
 try {
   if (typeof window !== 'undefined') {
-    analytics = getAnalytics(app); // eslint-disable-line @typescript-eslint/no-unused-vars
+    getAnalytics(app);
   }
-} catch (e) {
-  // Silently ignore analytics errors (e.g., if not supported)
+} catch (error) {
+    console.warn('Failed to init Firebase analytics', error);
 }
 
 export const auth = getAuth(app);

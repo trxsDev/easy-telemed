@@ -1,22 +1,32 @@
 import React, { useState } from "react";
-import {Link, useNavigate } from "react-router-dom";
-import { Form, Alert, Input, Button, Typography, Space, Card } from "antd";
-import { useUserAuth } from "../context/UserAuthContext";
+import { Link, useNavigate } from "react-router-dom";
+import { Form, Alert, Input, Button, Typography, Space, Card, message } from "antd";
+import { useUserAuthSupabase } from "../context/UserAuthContextSupabase";
+import { ChevronLeft } from "lucide-react";
+import ChangeLangButton from "./ChangeLangButton";
+import { useTranslation } from "react-i18next";
 
 function SignUpForm() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const { signUp } = useUserAuth();
+  const { signUp } = useUserAuthSupabase();
+  const [loading, setLoading] = useState(false);
 
   let navigate = useNavigate();
-  const handeSubmit = async (e) => {
+  const handeSubmit = async () => {
     setError("");
+    setLoading(true);
     try {
-      await signUp(email,password)
-      navigate("/");
-    }catch (err) {
-      setError(err.message);
+      await signUp(email, password, "patient");
+      // Backend API will stamp the requested role onto app_users immediately
+      message.success(t("signUpForm.successMessage"));
+      navigate("/verify-email");
+    } catch (err) {
+      setError(err.message || t("signUpForm.genericError"));
+    } finally {
+      setLoading(false);
     }
   };
  return (
@@ -29,16 +39,41 @@ function SignUpForm() {
         style={{
           borderRadius: '12px',
           boxShadow: '0 10px 30px rgba(0, 0, 0, 0.2)',
-          border: 'none'
+          border: 'none',
+          position: 'relative'
         }}
+        styles={{ body: { paddingTop: 48 } }}
       >
+        <div
+          style={{
+            position: "absolute",
+            right: 16,
+            top: 16,
+          }}
+        >
+          <ChangeLangButton />
+        </div>
+        <Button
+          type="text"
+          icon={<ChevronLeft />}
+          onClick={() => navigate('/')}
+          style={{
+            position: 'absolute',
+            left: 8,
+            top: 8,
+            color: '#667eea',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '4px 8px'
+          }}
+        />
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <div style={{ textAlign: 'center' }}>
             <Typography.Title level={2} style={{ margin: 0, color: '#333' }}>
-              Create Account
+              {t("signUpForm.title")}
             </Typography.Title>
             <Typography.Text type="secondary">
-              Join us today! It's quick and easy
+              {t("signUpForm.subtitle")}
             </Typography.Text>
           </div>
 
@@ -53,15 +88,15 @@ function SignUpForm() {
 
           <Form layout="vertical" onFinish={handeSubmit}>
             <Form.Item
-              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>Email Address</span>}
+              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>{t("signUpForm.emailLabel")}</span>}
               name="username"
               rules={[
-                { required: true, message: "Please input your email!" },
-                { type: "email", message: "Please enter a valid email!" },
+                { required: true, message: t("signUpForm.emailRequired") },
+                { type: "email", message: t("signUpForm.emailInvalid") },
               ]}
             >
               <Input 
-                placeholder="Enter your email" 
+                placeholder={t("signUpForm.emailPlaceholder")}
                 size="large"
                 style={{ borderRadius: '8px' }}
                 onChange={(e) => setEmail(e.target.value)} 
@@ -69,12 +104,12 @@ function SignUpForm() {
             </Form.Item>
 
             <Form.Item
-              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>Password</span>}
+              label={<span style={{ fontSize: '14px', fontWeight: '500' }}>{t("signUpForm.passwordLabel")}</span>}
               name="password"
-              rules={[{ required: true, message: "Please input your password!" }]}
+              rules={[{ required: true, message: t("signUpForm.passwordRequired") }]}
             >
               <Input.Password 
-                placeholder="Enter your password" 
+                placeholder={t("signUpForm.passwordPlaceholder")}
                 size="large"
                 style={{ borderRadius: '8px' }}
                 onChange={(e) => setPassword(e.target.value)} 
@@ -82,27 +117,29 @@ function SignUpForm() {
             </Form.Item>
 
             <Form.Item>
-              <Button 
-                type="primary" 
-                htmlType="submit" 
-                block 
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
                 size="large"
-                style={{
-                  borderRadius: '8px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  border: 'none',
-                  height: '48px',
-                  fontSize: '16px',
-                  fontWeight: '500'
-                }}
-              >
-                Create Account
+                loading={loading}
+              disabled={!email || !password}
+              style={{
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                border: 'none',
+                height: '48px',
+                fontSize: '16px',
+                fontWeight: '500'
+              }}
+            >
+                {loading ? t("signUpForm.submitLoading") : t("signUpForm.submit")}
               </Button>
             </Form.Item>
           </Form>
           <div style={{ textAlign: 'center' }}>
             <Typography.Text type="secondary">
-              Already have an account?{' '}
+              {t("signUpForm.haveAccount")} {' '}
               <Link 
                 to="/signin"
                 style={{ 
@@ -111,7 +148,7 @@ function SignUpForm() {
                   textDecoration: 'none'
                 }}
               >
-                Sign In
+                {t("signUpForm.signInLink")}
               </Link>
             </Typography.Text>
           </div>
