@@ -1,7 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { List, Tag, Space, Button, Typography, Skeleton, Empty, Popconfirm, message } from 'antd';
-import { supabase } from '../../api/SupabaseClient';
 import { CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+  approveDoctorRequest,
+  rejectDoctorRequest,
+  fetchDoctorRequestCount,
+} from '../../store/doctorRequestsSlice';
+import { selectDoctorRequestsState } from '../../store';
 
 const { Text } = Typography;
 
@@ -12,87 +18,77 @@ const { Text } = Typography;
   On approve: you might want to update the users table / user role separately (not included here; hook your logic in handleApprove)
 */
 
-function DoctorRequestList({ onProcessed, setRequestList, requestCount }) {
-  const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState([]);
+function DoctorRequestList({
+  requests = [],
+  loading = false,
+  requestingCount,
+  onRefresh,
+  onProcessed,
+  currentUserId,
+}) {
+  const dispatch = useDispatch();
+  const { submitting } = useSelector(selectDoctorRequestsState);
   const [processingId, setProcessingId] = useState(null);
 
- const fetchRequests = useCallback(async () => {
-  setLoading(true);
-
- // supabase v2
-const { data, error } = await supabase
-  .from('v_provider_applications_with_user')
-  .select('*')
-  .eq('role_requested', 'doctor')
-  .eq('status', 'pending')
-  .order('created_at', { ascending: false });
-
-if (error) {
-  message.error('Failed to load applications');
-} else {
-  setItems(data ?? []);
-}
-
-  setLoading(false);
-}, []);
-
+  const refreshList = useCallback(() => {
+    onRefresh?.();
+  }, [onRefresh]);
 
   useEffect(() => {
-    fetchRequests();
-    const channel = supabase
-      .channel('doctor-requests-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_requests' }, () => fetchRequests())
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [fetchRequests]);
+    refreshList();
+  }, [refreshList]);
 
-  useEffect(() => {
-    setRequestList(items);
-  }, [items, setRequestList]);
-
-  const updateStatus = async (id, status) => {
-    setProcessingId(id);
+  const handleApprove = async (record) => {
+    if (!record?.application_id || !record?.applicant_user_id) return;
+    const key = record.applicant_user_id;
+    setProcessingId(key);
     try {
-      if (status === 'approved') {
-        const { error: approveError } = await supabase
-          .from('app_users')
-          .update({ role: 'doctor', verify: true })
-          .eq('user_id', id);
-        if (approveError) throw approveError;
-      }
-
-      const { error: requestError } = await supabase
-        .from('doctor_requests')
-        .update({ status })
-        .eq('user_id', id);
-
-      if (requestError) {
-        throw requestError;
-      }
-
-      message.success(status === 'approved' ? 'Approved' : 'Rejected');
+      await dispatch(
+        approveDoctorRequest({
+          applicationId: record.application_id,
+          userId: record.applicant_user_id,
+          reviewerId: currentUserId || null,
+        })
+      ).unwrap();
+      message.success('Approved');
+      dispatch(fetchDoctorRequestCount());
+      refreshList();
       onProcessed?.();
-      fetchRequests();
     } catch (error) {
-      console.error('Failed to update doctor request status', error);
-      message.error('Update failed');
+      message.error(error || 'Update failed');
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handleApprove = (id) => {
-    updateStatus(id, 'approved')
-    console.log("Approved", id)
+  const handleReject = async (record) => {
+    if (!record?.application_id) return;
+    const key = record.applicant_user_id || record.application_id;
+    setProcessingId(key);
+    try {
+      await dispatch(
+        rejectDoctorRequest({
+          applicationId: record.application_id,
+          reason: null,
+          reviewerId: currentUserId || null,
+        })
+      ).unwrap();
+      message.success('Rejected');
+      dispatch(fetchDoctorRequestCount());
+      refreshList();
+      onProcessed?.();
+    } catch (error) {
+      message.error(error || 'Update failed');
+    } finally {
+      setProcessingId(null);
+    }
   };
-  const handleReject = (id) => updateStatus(id, 'rejected');
 
   if (loading) {
     return <Skeleton active paragraph={{ rows: 4 }} />;
   }
 
-  if (!items.length) {
+  if (!requests.length) {
     return <Empty description="No pending requests" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   }
 
@@ -101,13 +97,13 @@ if (error) {
   return (
     <div>
       <Space style={{ marginBottom: 12 }}>
-        <Button icon={<ReloadOutlined />} onClick={fetchRequests}>Refresh</Button>
-        <Text type="secondary">Unverify : {requestCount} | Pending Requests: {items.length} </Text>
+        <Button icon={<ReloadOutlined />} onClick={refreshList}>Refresh</Button>
+        <Text type="secondary">Unverify : {requestingCount} | Pending Requests: {requests.length} </Text>
         
       </Space>
       <List
         itemLayout="vertical"
-        dataSource={items}
+        dataSource={requests}
         renderItem={(item) => (
           <List.Item
             key={item.id ?? item.user_id}
@@ -116,15 +112,15 @@ if (error) {
                 key="approve"
                 title="Approve doctor"
                 description="Are you sure you want to approve this application?"
-                onConfirm={() => handleApprove(item.user_id)}
+                onConfirm={() => handleApprove(item)}
                 okText="Yes"
                 cancelText="No"
               >
                 <Button
                   type="primary"
                   icon={<CheckOutlined />}
-                  loading={processingId === item.user_id}
-                  disabled={processingId === item.user_id}
+                  loading={processingId === (item.applicant_user_id || item.user_id)}
+                  disabled={submitting}
                 >
                   Approve
                 </Button>
@@ -133,15 +129,15 @@ if (error) {
                 key="reject"
                 title="Reject doctor"
                 description="Are you sure you want to reject this application?"
-                onConfirm={() => handleReject(item.user_id)}
+                onConfirm={() => handleReject(item)}
                 okText="Yes"
                 cancelText="No"
               >
                 <Button
                   danger
                   icon={<CloseOutlined />}
-                  loading={processingId === item.user_id}
-                  disabled={processingId === item.user_id}
+                  loading={processingId === (item.applicant_user_id || item.user_id)}
+                  disabled={submitting}
                 >
                   Reject
                 </Button>

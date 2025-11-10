@@ -1,7 +1,6 @@
 import React, { useState } from "react";
-import { Form, Input, Button, Select, Row, Col, notification } from "antd"; 
+import { Form, Input, Button, Select, Row, Col, notification } from "antd";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
-import { supabase } from "../../api/SupabaseClient";
 
 function RegisterForm({ options }) {
   const [api, contextHolder] = notification.useNotification();
@@ -19,20 +18,7 @@ function RegisterForm({ options }) {
     const { email, password, role } = values;
     setLoading(true);
     try {
-      const { data,error } = await signUp(email, password);
-      if (error) throw error; // Trigger in backend will create app_users row (role=patient)
-      console.log("Signup data", data);
-      if (role && role === "doctor") {
-        const payload = {
-          user_id: data.user.id,
-          role: "doctor", 
-          verify: false, 
-        };
-        const { error: upsertErr } = await supabase
-          .from("app_users")
-          .upsert([payload], { onConflict: "user_id" }); // ต้องมี unique/PK บน user_id
-        if (upsertErr) throw upsertErr;
-      }
+      await signUp(email, password, role);
       openNotificationWithIcon('success',
         "Account created successfully! Please check your email to verify your account."
       );

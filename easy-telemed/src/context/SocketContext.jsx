@@ -21,7 +21,9 @@ export const SocketProvider = ({ children }) => {
     }
     try {
       socket.disconnect();
-    } catch (_) {}
+    } catch (error) {
+      console.warn("Failed to disconnect existing socket session", error);
+    }
     setSocket(null);
     setConnected(false);
   }, [session?.access_token, user?.user_id, socket]);

@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Card, Button, Space, Typography, Tag, message, Empty, Spin } from "antd";
-import { supabase } from "../../api/SupabaseClient";
+import { Card, Button, Space, Typography, Tag, message, Empty, Spin, Alert } from "antd";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 import { useSocket } from "../../context/SocketContext.jsx";
-import { fetchDoctorQueue, acceptMatchRequestBackend, createConsultationBackend } from "../../services/matchingService";
 import { useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchDoctorQueue as fetchDoctorQueueThunk,
+  acceptMatchRequest as acceptMatchRequestThunk,
+  createConsultation as createConsultationThunk,
+  selectDoctorQueueState,
+} from "../../store/matchingSlice";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -16,29 +21,25 @@ const STATUS_BADGE = {
 
 function DoctorQueue() {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
   const { user } = useUserAuthSupabase();
   const { emit } = useSocket();
   const navigate = useNavigate();
 
-  const [requests, setRequests] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
 
+  const { requests, loading, error } = useSelector(selectDoctorQueueState);
   const doctorId = user?.user_id;
 
   const fetchQueue = useCallback(async () => {
     if (!doctorId) return;
-    setLoading(true);
     try {
-      const items = await fetchDoctorQueue(doctorId);
-      setRequests(items);
+      await dispatch(fetchDoctorQueueThunk(doctorId)).unwrap();
     } catch (error) {
       console.error("Failed to fetch doctor queue", error);
       message.error(t("FETCH_QUEUE_FAILED", "ไม่สามารถโหลดคิวผู้ป่วยได้"));
-    } finally {
-      setLoading(false);
     }
-  }, [doctorId, t]);
+  }, [doctorId, dispatch, t]);
 
   useEffect(() => {
     fetchQueue();
@@ -55,13 +56,17 @@ function DoctorQueue() {
     if (!item?.request) return;
     setAcceptingId(item.request.request_id);
     try {
-      const result = await acceptMatchRequestBackend({ requestId: item.request.request_id, doctorId });
-      const consultation = await createConsultationBackend({
-        caseId: item.request.case_id,
-        patientId: item.case?.patient_id,
-        doctorId,
-        createdBy: doctorId,
-      });
+      const result = await dispatch(
+        acceptMatchRequestThunk({ requestId: item.request.request_id, doctorId })
+      ).unwrap();
+      const consultation = await dispatch(
+        createConsultationThunk({
+          caseId: item.request.case_id,
+          patientId: item.case?.patient_id,
+          doctorId,
+          createdBy: doctorId,
+        })
+      ).unwrap();
 
       emit("doctor:match_accepted", {
         requestId: item.request.request_id,
@@ -103,6 +108,15 @@ function DoctorQueue() {
               {t("DOCTOR_QUEUE_SUBTITLE", "เลือกเคสที่ต้องการให้บริการตามลำดับเวลา")}
             </Text>
           </Space>
+          {error && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginTop: 12 }}
+              message={t("FETCH_QUEUE_FAILED", "ไม่สามารถโหลดคิวผู้ป่วยได้")}
+              description={error}
+            />
+          )}
         </Card>
 
         {loading ? (

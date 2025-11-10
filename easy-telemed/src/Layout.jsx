@@ -20,7 +20,9 @@ export default function Layout() {
       try {
         // ปิดการใช้งานทั้งหมดโดยไม่เรียกขอสิทธิ์ใหม่
         twilioVideoService.leaveRoom();
-      } catch (_) {}
+      } catch (error) {
+        console.error("Failed to leave Twilio room on route change", error);
+      }
     }
 
     prevPathRef.current = currPath;

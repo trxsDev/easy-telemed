@@ -19,13 +19,8 @@ function SignUpForm() {
     setError("");
     setLoading(true);
     try {
-      const { data, error } = await signUp(email, password);
-      
-      if (error) {
-        throw error;
-      }
-      
-      // Trigger in backend will create app_users row (role=patient)
+      await signUp(email, password, "patient");
+      // Backend API will stamp the requested role onto app_users immediately
       message.success(t("signUpForm.successMessage"));
       navigate("/verify-email");
     } catch (err) {
@@ -47,7 +42,7 @@ function SignUpForm() {
           border: 'none',
           position: 'relative'
         }}
-        bodyStyle={{ paddingTop: 48 }}
+        styles={{ body: { paddingTop: 48 } }}
       >
         <div
           style={{

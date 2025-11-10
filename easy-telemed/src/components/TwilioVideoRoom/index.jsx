@@ -9,8 +9,10 @@ import {
   AudioMutedOutlined,
   StopOutlined
 } from '@ant-design/icons';
+import { useDispatch } from 'react-redux';
 import twilioVideoService from '../../services/twilioVideoServiceV2';
 import { useUserAuthSupabase } from '../../context/UserAuthContextSupabase';
+import { fetchTwilioToken } from '../../store/twilioSlice';
 import './TwilioRoom.css';
 
 const { Title, Text, Paragraph } = Typography;
@@ -29,6 +31,7 @@ function TwilioVideoRoom({
   canJoin = true,
 }) {
   const AUTO_JOIN_MAX_ATTEMPTS = 3;
+  const dispatch = useDispatch();
   const { user, role } = useUserAuthSupabase();
   
   // State management
@@ -84,7 +87,9 @@ function TwilioVideoRoom({
     if (!previewKey) return;
     try {
       sessionStorage.setItem(previewKey, '1');
-    } catch (_) {}
+    } catch (error) {
+      console.warn('Failed to persist preview modal state', error);
+    }
     setHasShownPreview(true);
   }, [previewKey]);
 
@@ -127,7 +132,9 @@ function TwilioVideoRoom({
       disconnectIntentRef.current = { intentional: true, allowReconnect: retain };
       twilioVideoService
         .hangupAndReset(retain)
-        .catch(() => {})
+        .catch((error) => {
+          console.error('Error running hangupAndReset', error);
+        })
         .finally(() => {
           if (!retain) {
             setLocalTracksReady(false);
@@ -154,7 +161,9 @@ function TwilioVideoRoom({
       if (videoTrack) {
         twilioVideoService.attachTrackToElement(videoTrack, containerRef.current, { isLocal: true });
       }
-    } catch (_) {}
+    } catch (error) {
+      console.warn('Failed to attach local video track', error);
+    }
   }, []);
 
   const setupLocalTracks = useCallback(async (options = {}) => {
@@ -172,8 +181,16 @@ function TwilioVideoRoom({
       // Stop and remove tracks that are no longer needed
       existingTracksRaw.forEach((track) => {
         if (!allowedKinds.has(track.kind)) {
-          try { track.disable?.(); } catch (_) {}
-          try { track.stop?.(); } catch (_) {}
+          try {
+            track.disable?.();
+          } catch (error) {
+            console.warn('Failed to disable local media track', error);
+          }
+          try {
+            track.stop?.();
+          } catch (error) {
+            console.warn('Failed to stop local media track', error);
+          }
         }
       });
 
@@ -276,7 +293,11 @@ function TwilioVideoRoom({
     if (localInlineVideoRef.current) {
       localInlineVideoRef.current.innerHTML = '';
     }
-    try { twilioVideoService.hangupAndReset(false); } catch (_) {}
+    try {
+      twilioVideoService.hangupAndReset(false);
+    } catch (error) {
+      console.warn('Failed to reset Twilio session during disconnect', error);
+    }
     const { intentional, allowReconnect } = disconnectIntentRef.current;
     const { manualOnly } = autoJoinStateRef.current;
     const shouldRetryAuto = !manualOnly && (allowReconnect || !intentional);
@@ -351,8 +372,10 @@ function TwilioVideoRoom({
     setIsConnecting(true);
 
     try {
-      // Get access token
-      const token = await twilioVideoService.getAccessToken(targetIdentity, targetRoomName);
+      twilioVideoService.checkTwilioConfig();
+      const { token } = await dispatch(
+        fetchTwilioToken({ identity: targetIdentity, roomName: targetRoomName })
+      ).unwrap();
       
       // Join room honoring current toggle states (join with media off by default)
       const room = await twilioVideoService.joinRoom(
@@ -384,7 +407,7 @@ function TwilioVideoRoom({
 
       // Re-attach local preview into the (possibly) new container in connected layout
       try {
-        let videoTrack2 = (twilioVideoService.localTracks || []).find(t => t.kind === 'video');
+        let videoTrack2 = (twilioVideoService.localTracks || []).find((t) => t.kind === 'video');
         if (!videoTrack2 && room?.localParticipant?.videoTracks) {
           const pub = Array.from(room.localParticipant.videoTracks.values())[0];
           videoTrack2 = pub?.track || null;
@@ -392,7 +415,9 @@ function TwilioVideoRoom({
         if (videoTrack2 && localInlineVideoRef.current && !previewOpen) {
           twilioVideoService.attachTrackToElement(videoTrack2, localInlineVideoRef.current, { isLocal: true });
         }
-      } catch (_) {}
+      } catch (error) {
+        console.warn('Failed to attach preview track after joining room', error);
+      }
 
       // Handle existing participants
       room.participants.forEach(participant => {
@@ -416,7 +441,7 @@ function TwilioVideoRoom({
     } finally {
       setIsConnecting(false);
     }
-  }, [handleParticipantConnected, identity, onConnected, roomName, setupRoomEventListeners, canJoin, markPreviewShown, audioEnabled, videoEnabled, previewOpen]);
+  }, [dispatch, handleParticipantConnected, identity, onConnected, roomName, setupRoomEventListeners, canJoin, markPreviewShown, audioEnabled, videoEnabled, previewOpen]);
 
   const openPreviewModal = useCallback(async () => {
     if (!canJoin) {
@@ -446,11 +471,15 @@ function TwilioVideoRoom({
     setJoinPending(false);
     if (!isConnected) {
       if (audioEnabled) {
-        twilioVideoService.toggleAudio(false).catch(() => {});
+        twilioVideoService.toggleAudio(false).catch((error) => {
+          console.warn('Failed to disable audio while closing preview', error);
+        });
         setAudioEnabled(false);
       }
       if (videoEnabled) {
-        twilioVideoService.toggleVideo(false).catch(() => {});
+        twilioVideoService.toggleVideo(false).catch((error) => {
+          console.warn('Failed to disable video while closing preview', error);
+        });
         setVideoEnabled(false);
       }
       if (localModalVideoRef.current) {
@@ -468,7 +497,12 @@ function TwilioVideoRoom({
 
   const confirmJoinFromPreview = useCallback(async () => {
     if (!localTracksReady && (audioEnabled || videoEnabled)) {
-      try { await setupLocalTracks({ audio: audioEnabled, video: videoEnabled }); } catch (_) { return; }
+      try {
+        await setupLocalTracks({ audio: audioEnabled, video: videoEnabled });
+      } catch (error) {
+        console.warn('Failed to ensure local tracks before joining room', error);
+        return;
+      }
     }
     setJoinPending(true);
     try {
@@ -482,7 +516,11 @@ function TwilioVideoRoom({
   const leaveRoom = useCallback(() => {
     // ปิดห้องและอุปกรณ์ทั้งหมดทันทีตามที่ร้องขอ
     disconnectIntentRef.current = { intentional: true, allowReconnect: false };
-    try { twilioVideoService.hangupAndReset(false); } catch (_) {}
+    try {
+      twilioVideoService.hangupAndReset(false);
+    } catch (error) {
+      console.warn('Failed to reset Twilio session after manual hangup', error);
+    }
     setIsConnected(false);
     setCurrentRoomName('');
     setParticipants([]);
@@ -525,7 +563,11 @@ function TwilioVideoRoom({
       message.info(target ? 'เปิดกล้อง' : 'ปิดกล้อง');
       if (target) {
         const containerRef = previewOpen ? localModalVideoRef : localInlineVideoRef;
-        try { attachLocalVideoTo(containerRef); } catch (_) {}
+        try {
+          attachLocalVideoTo(containerRef);
+        } catch (error) {
+          console.warn('Failed to attach local video after toggling', error);
+        }
       } else {
         if (localInlineVideoRef.current) {
           localInlineVideoRef.current.innerHTML = '';
@@ -545,7 +587,9 @@ function TwilioVideoRoom({
       try {
         // Attempt full hangup and device reset on unmount
         twilioVideoService.hangupAndReset(false);
-      } catch (_) {}
+      } catch (error) {
+        console.warn('Failed to reset Twilio session on unmount', error);
+      }
     };
   }, []);
 
@@ -562,7 +606,11 @@ function TwilioVideoRoom({
     if (!localTracksReady && Array.isArray(twilioVideoService.localTracks) && twilioVideoService.localTracks.length > 0) {
       const videoTrack = twilioVideoService.localTracks.find(t => t.kind === 'video');
       if (videoTrack && videoEnabled && localInlineVideoRef.current) {
-        try { twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true }); } catch (_) {}
+        try {
+          twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true });
+        } catch (error) {
+          console.warn('Failed to attach cached inline preview track', error);
+        }
       }
       setLocalTracksReady(true);
     }
@@ -574,7 +622,11 @@ function TwilioVideoRoom({
       if (videoEnabled && localTracksReady && localModalVideoRef.current) {
         const videoTrack = (twilioVideoService.localTracks || []).find((t) => t.kind === 'video');
         if (videoTrack) {
-          try { twilioVideoService.attachTrackToElement(videoTrack, localModalVideoRef.current, { isLocal: true }); } catch (_) {}
+          try {
+            twilioVideoService.attachTrackToElement(videoTrack, localModalVideoRef.current, { isLocal: true });
+          } catch (error) {
+            console.warn('Failed to attach track to modal preview', error);
+          }
         }
       }
     } else {
@@ -582,7 +634,11 @@ function TwilioVideoRoom({
         if (videoEnabled && localTracksReady) {
           const videoTrack = (twilioVideoService.localTracks || []).find((t) => t.kind === 'video');
           if (videoTrack) {
-            try { twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true }); } catch (_) {}
+            try {
+              twilioVideoService.attachTrackToElement(videoTrack, localInlineVideoRef.current, { isLocal: true });
+            } catch (error) {
+              console.warn('Failed to attach track back to inline preview', error);
+            }
           }
         } else {
           localInlineVideoRef.current.innerHTML = '';
@@ -626,7 +682,8 @@ function TwilioVideoRoom({
         if (cachedTracks.length === 0) {
           try {
             await setupLocalTracks({ audio: audioEnabled, video: videoEnabled });
-          } catch (_) {
+          } catch (error) {
+            console.warn('Auto-join failed to prepare local tracks', error);
             if (!skipPreview) setPreviewOpen(true);
             return;
           }
@@ -838,7 +895,7 @@ function TwilioVideoRoom({
                 <Card 
                   title={`คุณ (${identity})`} 
                   className="video-card local-video"
-                  bodyStyle={{ padding: 0 }}
+                  styles={{ body: { padding: 0 } }}
                 >
                   <div 
                     ref={localInlineVideoRef} 
@@ -861,7 +918,7 @@ function TwilioVideoRoom({
                   <Card 
                     title={participant.identity}
                     className="video-card remote-video"
-                    bodyStyle={{ padding: 0 }}
+                    styles={{ body: { padding: 0 } }}
                   >
                     <div 
                       id={`participant-${participant.sid}`}

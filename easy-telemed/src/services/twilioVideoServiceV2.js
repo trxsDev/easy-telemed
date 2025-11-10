@@ -1,5 +1,4 @@
 import { TWILIO_CONFIG } from '../config/twilio.js';
-const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_URL) || 'http://localhost:3001';
 
 // Service สำหรับสร้างห้อง video call
 export class TwilioVideoService {
@@ -24,7 +23,9 @@ export class TwilioVideoService {
       if (merged.length > 0) {
         this.localTracks = merged;
       }
-    } catch (_) {}
+    } catch (error) {
+      console.warn('Failed to sync local tracks from room', error);
+    }
   }
 
   // ตรวจสอบการตั้งค่า Twilio
@@ -37,41 +38,6 @@ export class TwilioVideoService {
       // สำหรับ production เราใช้ token จาก backend ไม่จำเป็นต้องมี VITE_* บน frontend
       // แสดงคำเตือนใน console เพื่อช่วย dev เท่านั้น แต่ไม่ต้อง throw
       console.warn('[Twilio] Frontend VITE_TWILIO_* ไม่ได้ตั้งค่า จะใช้ token จาก backend แทน');
-    }
-  }
-
-  // สร้าง access token สำหรับ development (ไม่แนะนำสำหรับ production)
-  async getAccessToken(identity, roomName) {
-    try {
-      // ใช้ backend API เพื่อขอ token เสมอ
-      this.checkTwilioConfig(); // ไม่ throw ถ้าไม่มี VITE_*
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
-      const response = await fetch(`${API_BASE}/api/twilio/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ identity, roomName }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-      
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        throw new Error(`Token API not available (${response.status}) ${text}`);
-      }
-
-      const data = await response.json();
-      if (!data?.token) {
-        throw new Error('Token API response missing "token" field');
-      }
-
-      return data.token;
-
-    } catch (error) {
-      const message = `ไม่สามารถดึง access token จาก backend ได้: ${error.message}`;
-      console.error(message);
-      throw new Error(`${message}\n\nกรุณาตรวจสอบให้แน่ใจว่าได้ตั้งค่า backend endpoint "/api/twilio/token" พร้อม Twilio credentials ที่ถูกต้อง หรือสร้าง endpoint ใน Functions ของ Supabase / Cloud ที่คืน token ให้ฝั่ง client.`);
     }
   }
 
@@ -111,7 +77,11 @@ export class TwilioVideoService {
           );
           this.localTracks.forEach((t) => {
             if (!t.sid || !published.has(t.sid)) {
-              try { room.localParticipant.publishTrack(t); } catch (_) {}
+              try {
+                room.localParticipant.publishTrack(t);
+              } catch (error) {
+                console.warn('Failed to publish cached local track', error);
+              }
             }
           });
         }
@@ -137,10 +107,16 @@ export class TwilioVideoService {
         if (lp && lp.tracks) {
           // Unpublish all tracks to release resources cleanly
           Array.from(lp.tracks.values()).forEach((pub) => {
-            try { if (pub.track) lp.unpublishTrack(pub.track); } catch (_) {}
+            try {
+              if (pub.track) lp.unpublishTrack(pub.track);
+            } catch (error) {
+              console.warn('Failed to unpublish local track during leaveRoom', error);
+            }
           });
         }
-      } catch (_) {}
+      } catch (error) {
+        console.warn('Failed to cleanly unpublish tracks before disconnect', error);
+      }
       this.currentRoom.disconnect();
       this.currentRoom = null;
     }
@@ -158,14 +134,28 @@ export class TwilioVideoService {
 
   // วางสาย + reset อุปกรณ์ (best-effort)
   async hangupAndReset(retainLocalTracks = false) {
-    try { this.leaveRoom(); } catch (_) {}
+    try {
+      this.leaveRoom();
+    } catch (error) {
+      console.warn('leaveRoom threw during hangupAndReset', error);
+    }
     if (!retainLocalTracks) {
       try {
         this.localTracks.forEach((track) => {
-          try { track.disable?.(); } catch (_) {}
-          try { track.stop?.(); } catch (_) {}
+          try {
+            track.disable?.();
+          } catch (error) {
+            console.warn('Failed to disable track during reset', error);
+          }
+          try {
+            track.stop?.();
+          } catch (error) {
+            console.warn('Failed to stop track during reset', error);
+          }
         });
-      } catch (_) {}
+      } catch (error) {
+        console.warn('Failed to iterate local tracks during reset', error);
+      }
       this.localTracks = [];
     }
   }
@@ -216,7 +206,11 @@ export class TwilioVideoService {
       this.localTracks.push(audioTrack);
       // Publish if in room
       if (this.currentRoom?.localParticipant) {
-        try { await this.currentRoom.localParticipant.publishTrack(audioTrack); } catch (_) {}
+        try {
+          await this.currentRoom.localParticipant.publishTrack(audioTrack);
+        } catch (error) {
+          console.warn('Failed to publish ensured audio track', error);
+        }
       }
     }
     return audioTrack;
@@ -234,7 +228,11 @@ export class TwilioVideoService {
       this.localTracks.push(videoTrack);
       // Publish if in room
       if (this.currentRoom?.localParticipant) {
-        try { await this.currentRoom.localParticipant.publishTrack(videoTrack); } catch (_) {}
+        try {
+          await this.currentRoom.localParticipant.publishTrack(videoTrack);
+        } catch (error) {
+          console.warn('Failed to publish ensured video track', error);
+        }
       }
     }
     return videoTrack;
@@ -249,7 +247,9 @@ export class TwilioVideoService {
       Array.from(element.children)
         .filter((el) => el.tagName === tag)
         .forEach((el) => element.removeChild(el));
-    } catch (_) {}
+    } catch (error) {
+      console.warn('Failed to prune duplicate media elements', error);
+    }
 
     const mediaElement = track.attach();
     // Ensure autoplay works across browsers
@@ -296,8 +296,16 @@ export class TwilioVideoService {
       if (enabled) {
         audioTrack.enable();
       } else {
-        try { audioTrack.disable(); } catch (_) {}
-        try { audioTrack.stop(); } catch (_) {}
+        try {
+          audioTrack.disable();
+        } catch (error) {
+          console.warn('Failed to disable audio track', error);
+        }
+        try {
+          audioTrack.stop();
+        } catch (error) {
+          console.warn('Failed to stop audio track', error);
+        }
         this.localTracks = this.localTracks.filter((t) => t !== audioTrack);
       }
       return true;
@@ -322,8 +330,16 @@ export class TwilioVideoService {
       if (enabled) {
         videoTrack.enable();
       } else {
-        try { videoTrack.disable(); } catch (_) {}
-        try { videoTrack.stop(); } catch (_) {}
+        try {
+          videoTrack.disable();
+        } catch (error) {
+          console.warn('Failed to disable video track', error);
+        }
+        try {
+          videoTrack.stop();
+        } catch (error) {
+          console.warn('Failed to stop video track', error);
+        }
         this.localTracks = this.localTracks.filter((t) => t !== videoTrack);
       }
       return true;

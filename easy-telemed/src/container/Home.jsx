@@ -209,7 +209,8 @@ function Home() {
           "Our care team is on standby to help troubleshoot technical issues or answer questions."
         ),
         ctaLabel: t("HOME_SUPPORT_CONTACT", "Contact support"),
-        ctaHref: "mailto:support@easy-telemed.com",
+        // ctaHref: "mailto:support@easy-telemed.com",
+        ctaHref: "mailto:theppratan.dev@gmail.com",
       },
     };
   }, [activeCaseId, navigate, profileComplete, role, subtitle, t]);
@@ -538,7 +539,7 @@ function Home() {
                 <Card
                   bordered
                   style={{ height: "100%" }}
-                  bodyStyle={{ display: "flex", flexDirection: "column", gap: 12 }}
+                  styles={{ body: { display: "flex", flexDirection: "column", gap: 12 } }}
                 >
                   <Tag
                     color="processing"

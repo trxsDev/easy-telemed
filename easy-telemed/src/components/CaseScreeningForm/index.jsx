@@ -30,7 +30,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { loadSpecialtyAvailability } from "../../store/availabilitySlice";
 import { selectAvailability, selectCases } from "../../store";
 import { submitPatientCase } from "../../store/casesSlice";
-import { fetchMatchingStatusByCase } from "../../services/matchingService";
+import { fetchMatchingStatusByCase as fetchMatchingStatusByCaseThunk } from "../../store/matchingSlice";
 const { Dragger } = Upload;
 
 // Step 0: เลือกแผนกที่ต้องการพบ
@@ -513,25 +513,39 @@ function CaseScreeningForm() {
     useEffect(() => {
       const enforceSingleActiveCase = async () => {
         let activeCaseId;
-        try { activeCaseId = localStorage.getItem('activeCaseId'); } catch {}
+        try {
+          activeCaseId = localStorage.getItem('activeCaseId');
+        } catch (error) {
+          console.warn("Failed to read activeCaseId from localStorage", error);
+        }
         if (!activeCaseId) {
           navigate('/easy-telemed/illness-case', { replace: true });
           return;
         }
         try {
-          const { case: caseRow, matchRequest, consultation } = await fetchMatchingStatusByCase(activeCaseId);
+          const { case: caseRow, matchRequest, consultation } = await dispatch(
+            fetchMatchingStatusByCaseThunk(activeCaseId)
+          ).unwrap();
           // Redirect only if this case belongs to current user AND it has an active request/consultation
           const belongs = !!caseRow && caseRow.patient_id && user?.user_id && caseRow.patient_id === user.user_id;
           if (belongs && (consultation || matchRequest)) {
             navigate(`/easy-telemed/matching/${activeCaseId}/wait`, { replace: true });
           } else {
             // Clear stale active case reference to prevent redirect loops
-            try { localStorage.removeItem('activeCaseId'); } catch {}
+            try {
+              localStorage.removeItem('activeCaseId');
+            } catch (error) {
+              console.warn("Failed to clear stale activeCaseId", error);
+            }
             navigate('/easy-telemed/illness-case', { replace: true });
           }
-        } catch {
+        } catch (error) {
           // If status fetch fails, clear to be safe
-          try { localStorage.removeItem('activeCaseId'); } catch {}
+          try {
+            localStorage.removeItem('activeCaseId');
+          } catch (storageError) {
+            console.warn("Failed to reset activeCaseId after fetch error", storageError);
+          }
           navigate('/easy-telemed/illness-case', { replace: true });
         }
       };
@@ -745,7 +759,11 @@ function CaseScreeningForm() {
           )
         );
         if (saved?.case_id) {
-          try { localStorage.setItem('activeCaseId', saved.case_id); } catch {}
+          try {
+            localStorage.setItem('activeCaseId', saved.case_id);
+          } catch (error) {
+            console.warn("Failed to persist activeCaseId", error);
+          }
           navigate(`/easy-telemed/matching/${saved.case_id}`, {
             state: {
               caseData: saved,

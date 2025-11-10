@@ -40,16 +40,11 @@ export class TwilioVideoService {
 //       return generateAccessToken(identity, roomName);
 //     }
 //   }
-async getAccessToken(identity, roomName) {
-  const response = await fetch('/api/twilio/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identity, roomName })
-  });
-  
-  const data = await response.json();
-  return data.token;
-}
+  async getAccessToken() {
+    throw new Error(
+      'TwilioVideoService.getAccessToken ถูกย้ายไปไว้ใน Redux thunk (fetchTwilioToken) แล้ว กรุณาเรียกใช้งานผ่าน src/store/twilioSlice.js'
+    );
+  }
 
   // เข้าร่วมห้อง
   async joinRoom(token, roomName, options = {}) {

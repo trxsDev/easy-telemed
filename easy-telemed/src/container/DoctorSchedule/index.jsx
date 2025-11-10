@@ -3,8 +3,14 @@ import { Card, Typography, Switch, Space, TimePicker, Button, message, Spin, Ale
 import { PlusOutlined, DeleteOutlined, SaveOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
+import { useDispatch, useSelector } from "react-redux";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
-import { fetchDoctorSchedule, upsertDoctorSchedule } from "../../services/doctorScheduleService";
+import {
+  fetchDoctorSchedule,
+  resetDoctorScheduleState,
+  selectDoctorScheduleState,
+  upsertDoctorSchedule,
+} from "../../store/doctorScheduleSlice";
 
 const { Title, Paragraph, Text } = Typography;
 const { RangePicker } = TimePicker;
@@ -82,11 +88,16 @@ const extractScheduleState = (rawAvailability) => {
 
 function DoctorSchedule() {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
   const { user, role, verify } = useUserAuthSupabase();
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [scheduleState, setScheduleState] = useState(() => buildDefaultScheduleState());
   const [isActive, setIsActive] = useState(false);
+  const {
+    schedule: storedSchedule,
+    loading: loadingSchedule,
+    saving: savingSchedule,
+    error: scheduleError,
+  } = useSelector(selectDoctorScheduleState);
 
   const canEdit = useMemo(() => role === "doctor" && verify === true, [role, verify]);
 
@@ -94,25 +105,34 @@ function DoctorSchedule() {
 
   useEffect(() => {
     if (!doctorId) {
+      dispatch(resetDoctorScheduleState());
+      setScheduleState(buildDefaultScheduleState());
+      setIsActive(false);
       return;
     }
+    dispatch(fetchDoctorSchedule(doctorId));
+  }, [dispatch, doctorId]);
 
-    const load = async () => {
-      setLoading(true);
-      try {
-        const data = await fetchDoctorSchedule(doctorId);
-        setIsActive(Boolean(data?.is_active));
-        setScheduleState(extractScheduleState(data?.availability));
-      } catch (error) {
-        console.error("Failed to load doctor schedule", error);
-        message.error(t("DOC_SCHEDULE_FETCH_FAILED", "ไม่สามารถโหลดข้อมูลตารางเวรได้"));
-      } finally {
-        setLoading(false);
-      }
-    };
+  useEffect(() => {
+    if (!storedSchedule) {
+      setScheduleState(buildDefaultScheduleState());
+      setIsActive(false);
+      return;
+    }
+    setIsActive(Boolean(storedSchedule.is_active));
+    setScheduleState(extractScheduleState(storedSchedule.availability));
+  }, [storedSchedule]);
 
-    load();
-  }, [doctorId, t]);
+  useEffect(() => {
+    if (!scheduleError || loadingSchedule) {
+      return;
+    }
+    if (scheduleError === "Failed to load doctor schedule") {
+      message.error(t("DOC_SCHEDULE_FETCH_FAILED", "ไม่สามารถโหลดข้อมูลตารางเวรได้"));
+    } else if (scheduleError !== "Failed to save doctor schedule" && !savingSchedule) {
+      message.error(scheduleError);
+    }
+  }, [scheduleError, loadingSchedule, savingSchedule, t]);
 
   const handleToggleDay = useCallback((dayKey, checked) => {
     setScheduleState((prev) => ({
@@ -187,18 +207,22 @@ function DoctorSchedule() {
       return;
     }
 
-    setSaving(true);
     try {
-      await upsertDoctorSchedule(doctorId, {
-        isActive,
-        availability: normalized,
-      });
+      await dispatch(
+        upsertDoctorSchedule({
+          doctorId,
+          isActive,
+          availability: normalized,
+        })
+      ).unwrap();
       message.success(t("DOC_SCHEDULE_SAVE_SUCCESS", "บันทึกตารางเวรสำเร็จ"));
     } catch (error) {
       console.error("Failed to save doctor schedule", error);
-      message.error(error.message || t("DOC_SCHEDULE_SAVE_FAILED", "ไม่สามารถบันทึกข้อมูลได้"));
-    } finally {
-      setSaving(false);
+      const errMsg =
+        typeof error === "string"
+          ? error
+          : error?.message || t("DOC_SCHEDULE_SAVE_FAILED", "ไม่สามารถบันทึกข้อมูลได้");
+      message.error(errMsg);
     }
   }, [doctorId, isActive, scheduleState, t]);
 
@@ -244,7 +268,7 @@ function DoctorSchedule() {
           </Space>
         </Card>
 
-        {loading ? (
+        {loadingSchedule ? (
           <Spin />
         ) : (
           <Card>
@@ -308,7 +332,7 @@ function DoctorSchedule() {
             type="primary"
             icon={<SaveOutlined />}
             size="large"
-            loading={saving}
+            loading={savingSchedule}
             onClick={handleSave}
           >
             {t("DOC_SCHEDULE_SAVE_ACTION", "บันทึกการเปลี่ยนแปลง")}

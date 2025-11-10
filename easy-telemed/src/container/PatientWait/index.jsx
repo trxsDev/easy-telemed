@@ -192,7 +192,9 @@ function PatientWait() {
                 .order('created_at', { ascending: false })
                 .maybeSingle();
               if (m) setMatchRequest(m);
-            } catch (_) {}
+            } catch (error) {
+              console.warn('Failed to load case or match request for consultation', error);
+            }
           }
           return; // done
         }
@@ -226,10 +228,10 @@ function PatientWait() {
             }
           }
         }
-      } catch (_) {
-        // silent fallback
+      } catch (error) {
+        console.warn('Failed to hydrate patient wait state from Supabase', error);
       }
-    })();
+      })();
   }, [matchRequest, requestId, user?.user_id, initialSpecialty]);
 
   useEffect(() => {
@@ -300,7 +302,9 @@ function PatientWait() {
           const mappedStatus = mapConsultationStatusToPatientStatus(data.status);
           if (mappedStatus) setCurrentStatus(mappedStatus);
         }
-      } catch (_) {}
+      } catch (error) {
+        console.warn('Consultation polling failed', error);
+      }
     }, 10000);
     return () => clearInterval(id);
   }, [matchRequest?.case_id, consultation, currentStatus]);
@@ -366,7 +370,9 @@ function PatientWait() {
           try {
             localStorage.setItem('activeConsultationId', consultId);
             localStorage.setItem('patientInvitedConsultationId', consultId);
-          } catch {}
+          } catch (error) {
+            console.warn('Failed to persist telemed consultation ids', error);
+          }
           navigate(`/easy-telemed/telemedroom?consultationId=${consultId}&caseId=${caseId}`, { replace: true });
         }
       }

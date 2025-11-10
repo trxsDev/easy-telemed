@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Form, Alert, Input, Button, Typography, Space, Card, message } from "antd";
 import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
-import { supabase } from "../../api/SupabaseClient";
 import { ChevronLeft } from "lucide-react";
 import ChangeLangButton from "../ChangeLangButton";
 import { useTranslation } from "react-i18next";
@@ -25,41 +24,7 @@ function DoctorRegisterForm() {
     setError("");
     setLoading(true);
     try {
-      // Sign up user
-      const { data, error } = await signUp(email, password);
-      if (error) throw error;
-
-      // Get user id (from returned data or by fetching session)
-      let userId = data?.user?.id;
-      if (!userId) {
-        const { data: userData, error: userErr } = await supabase.auth.getUser();
-        if (userErr) throw userErr;
-        userId = userData.user?.id;
-      }
-      if (!userId) throw new Error("Cannot resolve user id after signup");
-
-      // Upsert role into app_users (adjust column names if your schema differs)
-      // NOTE:
-      // Error you saw: "Could not find the 'email' column" => table 'app_users' ไม่มีคอลัมน์ email
-      // จาก context เดิม app_users มี (username, website, avatar_url) เท่านั้น
-      // แนะนำให้เพิ่มคอลัมน์ role ถ้ายังไม่มี:
-      //   alter table public.app_users add column role text default 'patient';
-      // แล้วจึงใช้ upsert ด้านล่างได้
-
-      // จาก error ล่าสุด: ไม่มี column "id" ใน app_users -> อาจใช้ชื่อ user_id แทน
-      // ปรับมาใช้ user_id หากตารางคุณนิยามแบบนั้น (ตรวจใน SQL Editor): \d app_users
-      const payload = {
-        user_id: userId,
-        // username: derivedUsername, // เปิดใช้ถ้ามีคอลัมน์
-        role: 'doctor' ,// กำหนด role เป็น verified_doctor,
-        verify: false // แพทย์ต้องรอการ verify จาก admin
-      };
-
-      const { error: upsertErr } = await supabase
-        .from('app_users')
-        .upsert([payload], { onConflict: 'user_id' }); // ต้องมี unique/PK บน user_id
-      if (upsertErr) throw upsertErr;
-
+      await signUp(email, password, "doctor");
       message.success(t("doctorRegisterForm.successMessage"));
       navigate("/easy-telemed/home");
     } catch (err) {
@@ -88,7 +53,7 @@ function DoctorRegisterForm() {
           border: "none",
           position: "relative",
         }}
-        bodyStyle={{ paddingTop: 48 }}
+        styles={{ body: { paddingTop: 48 } }}
       >
          <div style={{marginBottom: 24}}>
           <Button
@@ -175,7 +140,7 @@ function DoctorRegisterForm() {
                 block
                 size="large"
                 loading={loading}
-                disabled={!email || !password}
+                disabled={!email || !password || loading}
                 style={{
                   borderRadius: '8px',
                   background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',

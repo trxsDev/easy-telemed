@@ -3,8 +3,14 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { Card, Button, message, Space, Tag, Typography, Alert } from "antd";
 import specializations from "../../specialization.json";
-import { fetchActiveDoctorsBySpecialty, createMatchRequest, fetchMatchingStatusByCase } from "../../services/matchingService";
 import { useSocket } from "../../context/SocketContext.jsx";
+import { useDispatch, useSelector } from "react-redux";
+import { loadSpecialtyAvailability } from "../../store/availabilitySlice";
+import { selectAvailability } from "../../store";
+import {
+  createMatchRequest as createMatchRequestThunk,
+  fetchMatchingStatusByCase as fetchMatchingStatusByCaseThunk,
+} from "../../store/matchingSlice";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -44,6 +50,8 @@ function PatientMatch() {
   const location = useLocation();
   const params = useParams();
   const { emit } = useSocket();
+  const dispatch = useDispatch();
+  const { doctors: availabilityDoctors, stats: availabilityStats, loading: availabilityLoading } = useSelector(selectAvailability);
 
   const [caseData, setCaseData] = useState(location.state?.caseData || null);
   const [specialty, setSpecialty] = useState(location.state?.specialty || null);
@@ -56,10 +64,16 @@ function PatientMatch() {
 
   // Persist/redirect: if this case already has an active request or consultation, send user to the latest step
   useEffect(() => {
+    dispatch(loadSpecialtyAvailability());
+  }, [dispatch]);
+
+  useEffect(() => {
     const ensureLatestStep = async () => {
       if (!caseId) return;
       try {
-        const { matchRequest, consultation, step } = await fetchMatchingStatusByCase(caseId);
+        const { matchRequest, consultation } = await dispatch(
+          fetchMatchingStatusByCaseThunk(caseId)
+        ).unwrap();
         if (consultation) {
           navigate(`/easy-telemed/matching/${caseId}/wait`, {
             state: { requestId: matchRequest?.request_id, caseData, specialty, mode: 'auto' },
@@ -79,7 +93,7 @@ function PatientMatch() {
       }
     };
     ensureLatestStep();
-  }, [caseId]);
+  }, [caseId, caseData, specialty, dispatch, navigate]);
 
   useEffect(() => {
     if (!caseData && caseId) {
@@ -105,24 +119,25 @@ function PatientMatch() {
   }, [caseId, caseData, specialty, t]);
 
   useEffect(() => {
-    const loadDoctors = async () => {
-      if (!specialty) return;
+    if (!specialty) {
+      setDoctors([]);
+      return;
+    }
+    if (availabilityLoading) {
       setLoading(true);
-      try {
-        const { doctors: activeDoctors } = await fetchActiveDoctorsBySpecialty(
-          specialty.id || specialty.name
-        );
-        setDoctors(activeDoctors || []);
-      } catch (error) {
-        console.error("Failed to fetch doctors", error);
-        message.error(t("FETCH_DOCTORS_FAILED", "ไม่สามารถโหลดรายชื่อแพทย์ได้"));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDoctors();
-  }, [specialty, t]);
+      return;
+    }
+    setLoading(false);
+    const bucket = availabilityStats?.[specialty.id];
+    if (bucket?.doctors) {
+      setDoctors(bucket.doctors || []);
+      return;
+    }
+    const filtered = (availabilityDoctors || []).filter((doc) =>
+      (doc.specialties || []).some((s) => s.id === specialty.id || s.id === specialty?.id)
+    );
+    setDoctors(filtered);
+  }, [specialty, availabilityStats, availabilityDoctors, availabilityLoading]);
 
   const availableDoctorCount = doctors.length;
 
@@ -135,13 +150,15 @@ function PatientMatch() {
     setCreatingRequest(true);
     try {
       const targetDoctorId = doctorId || (doctors.length ? doctors[0].id : null);
-      const matchRequest = await createMatchRequest({
-        caseId: caseData.case_id,
-        patientId: caseData.patient_id,
-        mode,
-        preferredDoctorId: targetDoctorId,
-        specialty,
-      });
+      const matchRequest = await dispatch(
+        createMatchRequestThunk({
+          caseId: caseData.case_id,
+          specialty,
+          mode,
+          preferredDoctorId: targetDoctorId,
+          expiresAt: null,
+        })
+      ).unwrap();
 
       if (!matchRequest?.request_id) {
         throw new Error("Match request was not created");

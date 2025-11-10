@@ -25,6 +25,8 @@ import {
 import { selectDoctorRequestsState } from "../../store";
 import specializationData from "../../specialization.json";
 
+const { Title } = Typography;
+
 function DoctorRequestTable({
   requests = [],
   loading = false,
@@ -37,6 +39,7 @@ function DoctorRequestTable({
   const { submitting, downloads, downloadingPath } = useSelector(selectDoctorRequestsState);
   const [processingId, setProcessingId] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedCredentialPath, setSelectedCredentialPath] = useState(null);
 
   const refreshList = () => {
@@ -57,6 +60,7 @@ function DoctorRequestTable({
   };
 
   const showModal = async (record) => {
+    setSelectedRecord(record);
     try {
       const documents = Array.isArray(record.applicant_documents_form)
         ? record.applicant_documents_form
@@ -153,11 +157,7 @@ function DoctorRequestTable({
           const parsedSpecialties =
             typeof specialties === "string" ? JSON.parse(specialties) : specialties;
 
-          if (
-            parsedSpecialties &&
-            typeof parsedSpecialties === "object" &&
-            !Array.isArray(parsedSpecialties)
-          ) {
+          if (parsedSpecialties && typeof parsedSpecialties === "object" && !Array.isArray(parsedSpecialties)) {
             return i18n.language === "th"
               ? parsedSpecialties.name_th
               : parsedSpecialties.name || "N/A";
@@ -211,10 +211,7 @@ function DoctorRequestTable({
           <Space>
             <Popconfirm
               title={t("APPROVE_DOCTOR", "Approve doctor")}
-              description={t(
-                "CONFIRM_APPROVE",
-                "Are you sure you want to approve this application?"
-              )}
+              description={t("CONFIRM_APPROVE", "Are you sure you want to approve this application?")}
               onConfirm={() => handleApprove(record)}
               okText={t("YES", "Yes")}
               cancelText={t("NO", "No")}
@@ -230,10 +227,7 @@ function DoctorRequestTable({
             </Popconfirm>
             <Popconfirm
               title={t("REJECT_DOCTOR", "Reject doctor")}
-              description={t(
-                "CONFIRM_REJECT",
-                "Are you sure you want to reject this application?"
-              )}
+              description={t("CONFIRM_REJECT", "Are you sure you want to reject this application?")}
               onConfirm={() => handleReject(record)}
               okText={t("YES", "Yes")}
               cancelText={t("NO", "No")}
@@ -300,9 +294,7 @@ function DoctorRequestTable({
             style={{ width: "100%", height: "70vh", border: "none" }}
           />
         ) : (
-          <Typography.Paragraph>
-            {t("NO_DOCUMENT_FOUND", "ไม่พบเอกสารแนบ")}
-          </Typography.Paragraph>
+          <Typography.Paragraph>{t("NO_DOCUMENT_FOUND", "ไม่พบเอกสารแนบ")}</Typography.Paragraph>
         )}
       </Modal>
     </div>

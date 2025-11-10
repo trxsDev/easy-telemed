@@ -1,14 +1,20 @@
-import React, { useState } from "react";
-import { Table, Button, Modal, Card, Image } from "antd";
+import React, { useMemo, useState } from "react";
+import { Table, Button, Modal, Card, Image, Spin, message } from "antd";
 import { CheckOutlined, CloseOutlined } from "@ant-design/icons";
-import { supabase } from "../../api/SupabaseClient";
 import { useTranslation } from "react-i18next";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  downloadDoctorCredential,
+  clearDownload,
+} from "../../store/doctorRequestsSlice";
+import { selectDoctorRequestsState } from "../../store";
 
 function DoctorTable({ userData }) {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
+  const { downloads, downloadingPath } = useSelector(selectDoctorRequestsState);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [credentialsDoc, setCredentialsDoc] = useState(null);
-  
+  const [selectedCredentialPath, setSelectedCredentialPath] = useState(null);
 
   const columns = [
     {
@@ -60,7 +66,10 @@ function DoctorTable({ userData }) {
 
   const handleOk = () => {
     setIsModalOpen(false);
-    setCredentialsDoc(null);
+    if (selectedCredentialPath) {
+      dispatch(clearDownload(selectedCredentialPath));
+      setSelectedCredentialPath(null);
+    }
   };
 
   const showModal = async (credential) => {
@@ -68,29 +77,27 @@ function DoctorTable({ userData }) {
       return;
     }
 
-    const credentials = JSON.parse(credential);
-    const credPath = credentials[0];
-
     try {
-      const { data: fileData, error: downloadError } = await supabase.storage
-        .from("credentials")
-        .download(credPath);
-
-      if (downloadError) {
-        console.error("Download error:", downloadError);
+      const docs = Array.isArray(credential) ? credential : JSON.parse(credential || "[]");
+      const credPath = docs?.[0];
+      if (!credPath) {
+        message.warning(t("NO_DOCUMENT_FOUND", "ไม่พบเอกสารแนบ"));
         return;
       }
-
-      if (fileData) {
-        const url = URL.createObjectURL(fileData);
-        setCredentialsDoc(url);
-      }
+      setSelectedCredentialPath(credPath);
+      await dispatch(downloadDoctorCredential(credPath)).unwrap();
+      setIsModalOpen(true);
     } catch (error) {
       console.error("Error fetching credentials:", error);
+      message.error(t("LOAD_DOCUMENT_FAILED", "ไม่สามารถโหลดเอกสารได้"));
+      setSelectedCredentialPath(null);
     }
-
-    setIsModalOpen(true);
   };
+
+  const credentialUrl = useMemo(() => {
+    if (!selectedCredentialPath) return null;
+    return downloads[selectedCredentialPath] || null;
+  }, [downloads, selectedCredentialPath]);
 
   return (
     <div>
@@ -124,14 +131,26 @@ function DoctorTable({ userData }) {
         title="Credential"
         closable={{ "aria-label": "Custom Close Button" }}
         open={isModalOpen}
-        onOk={() => handleOk()}
-        onCancel={() => setIsModalOpen(false)}
+        onOk={handleOk}
+        onCancel={handleOk}
+        width="70%"
+        destroyOnClose
       >
+        {downloadingPath && downloadingPath === selectedCredentialPath ? (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <Spin />
+          </div>
+        ) : credentialUrl ? (
           <Card>
-            <Image src={credentialsDoc} alt="" style={{ width: "100%" }} />
+            <Image src={credentialUrl} alt="" style={{ width: "100%" }} />
           </Card>
-        
-        
+        ) : (
+          <Card>
+            <div style={{ textAlign: "center", padding: "24px 0" }}>
+              {t("NO_DOCUMENT_FOUND", "ไม่พบเอกสารแนบ")}
+            </div>
+          </Card>
+        )}
       </Modal>
     </div>
   );

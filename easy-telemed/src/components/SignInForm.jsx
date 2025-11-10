@@ -57,7 +57,7 @@ function SignInForm() {
           border: "none",
           position: "relative",
         }}
-        bodyStyle={{ paddingTop: 48 }}
+        styles={{ body: { paddingTop: 48 } }}
       >
         <div style={{ marginBottom: 24 }}>
           <Button

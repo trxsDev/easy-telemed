@@ -1,25 +1,31 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Form, Input, Button, Table, Space, Select, InputNumber, message } from 'antd';
-import { fetchDrugs, ensurePrescription, addPrescriptionItems, upsertDischargeSummary } from '../../services/consultationService';
+import { useDispatch, useSelector } from 'react-redux';
+import {
+  fetchConsultationDrugs,
+  ensureConsultationPrescription,
+  addConsultationPrescriptionItems,
+  upsertConsultationDischarge,
+  selectConsultationDrugs,
+} from '../../store/consultationSlice';
 
 function DoctorSummary({ consultationId, doctorId }) {
   const [form] = Form.useForm();
-  const [drugs, setDrugs] = useState([]);
+  const dispatch = useDispatch();
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prescription, setPrescription] = useState(null);
+  const { drugs, loading, error } = useSelector(selectConsultationDrugs);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const { drugs: list } = await fetchDrugs();
-        setDrugs(list || []);
-      } catch (e) {
-        message.error('โหลดรายการยาไม่สำเร็จ');
-      }
-    })();
-  }, []);
+    dispatch(fetchConsultationDrugs());
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (error) {
+      message.error(error);
+    }
+  }, [error]);
 
   const drugOptions = useMemo(() => drugs.map((d) => ({ label: `${d.name}${d.strength ? ' ' + d.strength : ''}`, value: d.drug_id, meta: d })), [drugs]);
 
@@ -63,21 +69,35 @@ function DoctorSummary({ consultationId, doctorId }) {
     try {
       setSaving(true);
       // Ensure we have a prescription
-      const pres = prescription || (await ensurePrescription(consultationId, doctorId)).prescription;
+      const pres =
+        prescription ||
+        (await dispatch(
+          ensureConsultationPrescription({ consultationId, issuedBy: doctorId })
+        ).unwrap()).prescription;
       setPrescription(pres);
 
       const validItems = items.filter((it) => it.drug_id);
       if (validItems.length > 0) {
-        await addPrescriptionItems(pres.prescription_id, validItems);
+        await dispatch(
+          addConsultationPrescriptionItems({
+            prescriptionId: pres.prescription_id,
+            items: validItems,
+          })
+        ).unwrap();
       }
 
       const values = await form.validateFields();
-      await upsertDischargeSummary(consultationId, {
-        diagnosis: values.diagnosis || null,
-        plan: values.plan || null,
-        advice: values.advice || null,
-        prescription_id: pres.prescription_id,
-      });
+      await dispatch(
+        upsertConsultationDischarge({
+          consultationId,
+          payload: {
+            diagnosis: values.diagnosis || null,
+            plan: values.plan || null,
+            advice: values.advice || null,
+            prescription_id: pres.prescription_id,
+          },
+        })
+      ).unwrap();
       message.success('บันทึกสรุปผลเรียบร้อย');
     } catch (e) {
       message.error(e.message || 'บันทึกไม่สำเร็จ');

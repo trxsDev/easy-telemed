@@ -77,7 +77,9 @@ const fetchJson = async (url, options = {}) => {
     try {
       const e = await resp.json();
       msg = e.error || msg;
-    } catch {}
+    } catch (error) {
+      console.warn("Failed to parse error payload from fetchJson", error);
+    }
     throw new Error(msg);
   }
   return resp.json();
@@ -121,7 +123,11 @@ export const cancelMatchRequest = async (requestId) => {
   const res = await fetchJson(`${API_BASE}/api/matching/requests/${requestId}/cancel`, {
     method: 'POST',
   });
-  try { localStorage.removeItem('activeCaseId'); } catch {}
+  try {
+    localStorage.removeItem('activeCaseId');
+  } catch (error) {
+    console.warn("Failed to clear activeCaseId after cancel", error);
+  }
   return res;
 };
 

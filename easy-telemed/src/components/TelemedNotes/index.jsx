@@ -1,57 +1,42 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Card, Button, Input, List, message, Typography, Empty } from "antd";
-import { supabase } from "../../api/SupabaseClient";
+import { Card, Button, Input, List, message, Typography, Empty, Alert } from "antd";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  addDoctorNote,
+  fetchNotesByConsultation,
+  selectTelemedNotesByConsultation,
+  startNotesSubscription,
+  stopNotesSubscription,
+} from "../../store/telemedNotesSlice";
 
 const { TextArea } = Input;
 const { Text } = Typography;
 
 function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
-  const [notes, setNotes] = useState([]);
+  const dispatch = useDispatch();
+  const { notes, loading, error, subscriptionActive, subscribing } = useSelector((state) =>
+    selectTelemedNotesByConsultation(state, consultationId)
+  );
   const [noteText, setNoteText] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const fetchNotes = useCallback(async () => {
-    if (!consultationId) return;
-    const { data, error } = await supabase
-      .from("doctor_notes")
-      .select("note_id, note_text, author_id, created_at")
-      .eq("consultation_id", consultationId)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Failed to fetch notes", error);
-      message.error("ไม่สามารถโหลดบันทึกได้");
-      return;
-    }
-    setNotes(data || []);
-  }, [consultationId]);
-
-  useEffect(() => {
-    fetchNotes();
-  }, [fetchNotes]);
+  const [saving, setSaving] = useState(false);
+  const canEdit = !readOnly;
 
   useEffect(() => {
     if (!consultationId) return;
-    const channel = supabase
-      .channel(`doctor-notes:${consultationId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "doctor_notes",
-          filter: `consultation_id=eq.${consultationId}`,
-        },
-        fetchNotes
-      )
-      .subscribe();
-
+    dispatch(fetchNotesByConsultation({ consultationId }));
+    dispatch(startNotesSubscription({ consultationId }));
     return () => {
-      supabase.removeChannel(channel);
+      dispatch(stopNotesSubscription({ consultationId })).catch(() => {});
     };
-  }, [consultationId, fetchNotes]);
+  }, [dispatch, consultationId]);
 
-  const handleSave = async () => {
+  useEffect(() => {
+    if (error) {
+      message.error(error);
+    }
+  }, [error]);
+
+  const handleSave = useCallback(async () => {
     if (!consultationId || !doctorId) {
       message.error("ไม่พบข้อมูลสำหรับบันทึก note");
       return;
@@ -60,26 +45,23 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
       message.warning("กรุณากรอกข้อความ note");
       return;
     }
-
-    setLoading(true);
+    setSaving(true);
     try {
-      const { error } = await supabase
-        .from("doctor_notes")
-        .insert({
-          consultation_id: consultationId,
-          author_id: doctorId,
-          note_text: noteText.trim(),
-        });
-      if (error) throw error;
+      await dispatch(
+        addDoctorNote({
+          consultationId,
+          doctorId,
+          noteText,
+        })
+      ).unwrap();
       setNoteText("");
-      fetchNotes();
-    } catch (error) {
-      console.error("Failed to save note", error);
-      message.error("บันทึก note ไม่สำเร็จ");
+      message.success("บันทึก note สำเร็จ");
+    } catch (err) {
+      message.error(err?.message || "บันทึก note ไม่สำเร็จ");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  };
+  }, [consultationId, doctorId, noteText, dispatch]);
 
   return (
     <Card
@@ -95,28 +77,41 @@ function TelemedNotes({ consultationId, doctorId, readOnly = false }) {
             placeholder="จดบันทึกเพิ่มเติมระหว่างการปรึกษา..."
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
+            disabled={!canEdit || saving}
           />
           <Button
             type="primary"
             onClick={handleSave}
-            loading={loading}
+            loading={saving}
             style={{ marginTop: 8 }}
+            disabled={!canEdit}
           >
             บันทึก note
           </Button>
         </div>
       )}
 
+      {(subscribing || subscriptionActive) && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={
+            subscribing
+              ? "กำลังเชื่อมต่อ Supabase realtime สำหรับ note"
+              : "เชื่อมต่อกับ Supabase realtime สำหรับ note แล้ว"
+          }
+        />
+      )}
+
       <List
         size="small"
         dataSource={notes}
+        loading={loading}
         locale={{ emptyText: <Empty description="ยังไม่มีบันทึก" /> }}
         renderItem={(item) => (
           <List.Item key={item.note_id}>
-            <List.Item.Meta
-              title={new Date(item.created_at).toLocaleString()}
-              description={item.note_text}
-            />
+            <List.Item.Meta title={new Date(item.created_at).toLocaleString()} description={item.note_text} />
           </List.Item>
         )}
       />

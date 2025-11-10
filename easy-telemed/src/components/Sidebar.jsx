@@ -53,22 +53,45 @@ export default function Sidebar() {
     if (socket) {
       const onDoctorReady = (payload) => {
         if (payload?.consultation?.patient_id === authUser?.user_id) {
-          try { localStorage.setItem('patientInvitedConsultationId', payload.consultation?.consultation_id || ''); } catch {}
+          try {
+            localStorage.setItem(
+              "patientInvitedConsultationId",
+              payload.consultation?.consultation_id || ""
+            );
+          } catch (error) {
+            console.warn("Failed to cache patient consultation invite", error);
+          }
           setPatientTelemedEnabled(true);
         }
       };
       const onSummarizing = (payload) => {
         if (payload?.patientId === authUser?.user_id || payload?.consultation?.patient_id === authUser?.user_id) {
           setPatientTelemedEnabled(false); // hide after call finished/summarizing
-          try { localStorage.removeItem('activeConsultationId'); } catch {}
-          try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
+          try {
+            localStorage.removeItem("activeConsultationId");
+          } catch (error) {
+            console.warn("Failed to clear active consultation cache", error);
+          }
+          try {
+            localStorage.removeItem("patientInvitedConsultationId");
+          } catch (error) {
+            console.warn("Failed to clear consultation invite cache", error);
+          }
         }
       };
       const onEnded = (payload) => {
         if (payload?.patientId === authUser?.user_id || payload?.consultation?.patient_id === authUser?.user_id) {
           setPatientTelemedEnabled(false);
-          try { localStorage.removeItem('activeConsultationId'); } catch {}
-          try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
+          try {
+            localStorage.removeItem("activeConsultationId");
+          } catch (error) {
+            console.warn("Failed to clear active consultation cache", error);
+          }
+          try {
+            localStorage.removeItem("patientInvitedConsultationId");
+          } catch (error) {
+            console.warn("Failed to clear consultation invite cache", error);
+          }
         }
       };
       socket.on?.('doctor:ready', onDoctorReady);
@@ -139,8 +162,7 @@ export default function Sidebar() {
       to: "/easy-telemed/profile",
       icon: <CircleUserRound size={24} />,
       label: "Profile",
-      roles: ["patient"],
-      requireUnverified: true,
+      roles: ["admin", "doctor", "patient"],
     },
     {
       to: "/easy-telemed/doctor/schedule",
@@ -164,7 +186,7 @@ export default function Sidebar() {
     
     // PRIORITY: if patient role and not verified, show ONLY profile page
     if (verify !== true && role === "patient") {
-      return item.to === "/easy-telemed/profile" && item.requireUnverified === true;
+      return item.to === "/easy-telemed/profile";
     }
    
     // For verified doctors, exclude onboarding page

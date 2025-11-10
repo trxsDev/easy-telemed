@@ -1,25 +1,33 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Button, Card, Divider, Typography, Badge } from "antd";
 import { UserAddOutlined, TeamOutlined } from "@ant-design/icons";
 import "./styles.css";
 import RegisterForm from "../../components/RegisterForm";
 import DoctorRequestList from "../../components/DoctorRequests/DoctorRequestList";
 import DoctorRequestTable from "../../components/DoctorRequests/DoctorRequestTable";
-import { supabase } from "../../api/SupabaseClient";
 import { useTranslation } from "react-i18next";
 import ChangeLangButton from "../../components/ChangeLangButton";
+import { useDispatch, useSelector } from "react-redux";
+import {
+  fetchDoctorRequestCount,
+  fetchDoctorRequestList,
+} from "../../store/doctorRequestsSlice";
+import { selectDoctorRequestsState } from "../../store";
+import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 
 const { Title, Text } = Typography;
 
 function Register() {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
+  const { user } = useUserAuthSupabase();
   const [activeView, setActiveView] = useState("create"); // 'create' | 'requests'
-  const [requestCount, setRequestCount] = useState(0);
-  const [loadingCount, setLoadingCount] = useState(false);
-  const [requestList, setRequestList] = useState([]); // เพิ่ม state สำหรับเก็บรายการคำขอแพทย์
-  useEffect(() => { 
-    console.log("Request List Updated:", requestList);
-  }, [requestList]);
+  const {
+    count: requestCount,
+    loadingCount,
+    list: requestList,
+    loadingList,
+  } = useSelector(selectDoctorRequestsState);
 
   const options = useMemo(
     () => [
@@ -29,32 +37,22 @@ function Register() {
     [t]
   );
 
-  const fetchRequestCount = useCallback(async () => {
-    setLoadingCount(true);
-    // Assumption: table 'doctor_requests' with status column. Adjust if schema differs.
-    const { count, error } = await supabase
-      .from("app_users")
-      .select("*", { count: "exact", head: true })
-      .eq('role', 'doctor')
-      .eq('verify', false) // เฉพาะแพทย์ที่ยังไม่ได้รับการ verify
-    if (!error) setRequestCount(count || 0);
-    console.log("count :",count)
-    setLoadingCount(false);
-  }, []);
+  const refreshCount = useCallback(() => {
+    dispatch(fetchDoctorRequestCount());
+  }, [dispatch]);
+
+  const refreshList = useCallback(() => {
+    dispatch(fetchDoctorRequestList());
+  }, [dispatch]);
+
+  const refreshAll = useCallback(() => {
+    refreshList();
+    refreshCount();
+  }, [refreshList, refreshCount]);
 
   useEffect(() => {
-    fetchRequestCount();
-    // Optional: subscribe to realtime changes if enabled
-    const channel = supabase
-      .channel("doctor-requests-count")
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'app_users' },
-        () => fetchRequestCount()
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [fetchRequestCount]);
+    refreshAll();
+  }, [refreshAll]);
 
   return (
     <div style={{display: 'flex', flexDirection: 'row', gap: 16, width: '100%', margin: '0', padding: '0'}}>
@@ -105,12 +103,25 @@ function Register() {
         {activeView === 'create' ? (
           <RegisterForm options={options} />
         ) : (
-          <DoctorRequestList onProcessed={fetchRequestCount} setRequestList={setRequestList} requestCount={requestCount}/>
+          <DoctorRequestList
+            requests={requestList}
+            loading={loadingList}
+            requestingCount={requestCount}
+            onRefresh={refreshAll}
+            onProcessed={refreshCount}
+            currentUserId={user?.user_id}
+          />
         )}
       </Card>
       {activeView === 'requests' && (
         <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
-          <DoctorRequestTable requestList={requestList} onProcessed={fetchRequestCount} />
+          <DoctorRequestTable
+            requests={requestList}
+            loading={loadingList}
+            onRefresh={refreshAll}
+            onProcessed={refreshCount}
+            currentUserId={user?.user_id}
+          />
         </div>
       )}
 

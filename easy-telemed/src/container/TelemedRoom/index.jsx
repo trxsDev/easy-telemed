@@ -5,19 +5,25 @@ import { useUserAuthSupabase } from "../../context/UserAuthContextSupabase";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../../api/SupabaseClient";
 import TwilioVideoRoom from "../../components/TwilioVideoRoom";
+import { useDispatch, useSelector } from "react-redux";
 import {
-  markConsultationStarted,
-  moveToSummarizing,
-  pauseConsultation,
-  completeSummary,
-  moveToAwaitingPayment,
-  markConsultationPaid,
-} from "../../services/consultationService";
+  markConsultationStarted as markConsultationStartedThunk,
+  moveConsultationToSummarizing,
+  pauseConsultationById,
+  completeConsultationSummary,
+  moveConsultationToAwaitingPayment,
+  markConsultationAsPaid,
+} from "../../store/consultationSlice";
 import TelemedNotes from "../../components/TelemedNotes";
 import DoctorSummary from "../../components/DoctorSummary";
 import TelemedChat from "../../components/TelemedChat";
 import { useSocket } from "../../context/SocketContext.jsx";
-import { fetchDoctorQueue, acceptMatchRequestBackend, createConsultationBackend, doctorHeartbeat } from "../../services/matchingService";
+import {
+  fetchDoctorQueue as fetchDoctorQueueThunk,
+  acceptMatchRequest as acceptMatchRequestThunk,
+  createConsultation as createConsultationThunk,
+  doctorHeartbeat as doctorHeartbeatThunk,
+} from "../../store/matchingSlice";
 
 const { Title, Paragraph } = Typography;
 
@@ -36,6 +42,7 @@ function TelemedRoom() {
   const { emit, socket } = useSocket();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const dispatch = useDispatch();
   const consultationId = searchParams.get("consultationId");
   const fallbackCaseId = searchParams.get("caseId");
 
@@ -45,9 +52,7 @@ function TelemedRoom() {
   const [matchRequest, setMatchRequest] = useState(null);
   const [patientInfo, setPatientInfo] = useState(null);
   const [doctorInfo, setDoctorInfo] = useState(null);
-  const [queueLoading, setQueueLoading] = useState(false);
   const [acceptingId, setAcceptingId] = useState(null);
-  const [queueItems, setQueueItems] = useState([]);
   const lastQueueCountRef = useRef(0);
   const [requestId, setRequestId] = useState(null);
   const [summaryDocuments, setSummaryDocuments] = useState(null);
@@ -55,6 +60,10 @@ function TelemedRoom() {
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [videoControlSignal, setVideoControlSignal] = useState(null);
   const [summaryPreview, setSummaryPreview] = useState({ open: false, loading: false, data: null });
+  const { doctorQueue, queueLoading } = useSelector((state) => ({
+    doctorQueue: state.matching.doctorQueue,
+    queueLoading: state.matching.queueLoading,
+  }));
 
   const refreshSummaryDocuments = useCallback(async (targetConsultationId) => {
     const id = targetConsultationId || consultation?.consultation_id;
@@ -236,9 +245,21 @@ function TelemedRoom() {
   const PATIENT_STATUS_KEY = 'patientTelemedStatus';
 
   const clearPatientTelemedFlags = useCallback(() => {
-    try { localStorage.removeItem('activeConsultationId'); } catch {}
-    try { localStorage.removeItem('patientInvitedConsultationId'); } catch {}
-    try { localStorage.removeItem(PATIENT_STATUS_KEY); } catch {}
+    try {
+      localStorage.removeItem('activeConsultationId');
+    } catch (error) {
+      console.warn('Failed to clear active consultation id', error);
+    }
+    try {
+      localStorage.removeItem('patientInvitedConsultationId');
+    } catch (error) {
+      console.warn('Failed to clear patient invite id', error);
+    }
+    try {
+      localStorage.removeItem(PATIENT_STATUS_KEY);
+    } catch (error) {
+      console.warn('Failed to clear stored patient telemed status', error);
+    }
   }, []);
 
   const defaultRoomName = useMemo(() => {
@@ -256,29 +277,25 @@ function TelemedRoom() {
   useEffect(() => {
     if (!isDoctor || !doctorId) return;
     // immediate ping
-    doctorHeartbeat(doctorId, true).catch(() => {});
-    const id = setInterval(() => doctorHeartbeat(doctorId, true).catch(() => {}), 60_000);
+    dispatch(doctorHeartbeatThunk({ doctorId, isActive: true })).catch(() => {});
+    const id = setInterval(() => {
+      dispatch(doctorHeartbeatThunk({ doctorId, isActive: true })).catch(() => {});
+    }, 60_000);
     return () => clearInterval(id);
-  }, [isDoctor, doctorId]);
+  }, [dispatch, isDoctor, doctorId]);
   const loadQueue = useCallback(async () => {
     if (!isDoctor || !doctorId) return;
-    setQueueLoading(true);
     try {
-      const items = await fetchDoctorQueue(doctorId);
-      // Notify when new items come in
+      const items = await dispatch(fetchDoctorQueueThunk(doctorId)).unwrap();
       if (items.length > lastQueueCountRef.current) {
         const diff = items.length - lastQueueCountRef.current;
         message.info(`มีคำขอใหม่จำนวน ${diff} รายการ`);
       }
       lastQueueCountRef.current = items.length;
-      setQueueItems(items);
     } catch (e) {
       // Silent fail on this panel
-      // console.error('Failed to load doctor queue', e);
-    } finally {
-      setQueueLoading(false);
     }
-  }, [doctorId, isDoctor]);
+  }, [dispatch, doctorId, isDoctor]);
 
   useEffect(() => {
     loadQueue();
@@ -330,13 +347,17 @@ function TelemedRoom() {
     if (!item?.request || !isDoctor || !doctorId) return;
     setAcceptingId(item.request.request_id);
     try {
-      const request = await acceptMatchRequestBackend({ requestId: item.request.request_id, doctorId });
-      const consultation = await createConsultationBackend({
-        caseId: item.request.case_id,
-        patientId: item.case?.patient_id,
-        doctorId,
-        createdBy: doctorId,
-      });
+      const request = await dispatch(
+        acceptMatchRequestThunk({ requestId: item.request.request_id, doctorId })
+      ).unwrap();
+      const consultation = await dispatch(
+        createConsultationThunk({
+          caseId: item.request.case_id,
+          patientId: item.case?.patient_id,
+          doctorId,
+          createdBy: doctorId,
+        })
+      ).unwrap();
 
       emit?.("doctor:match_accepted", {
         requestId: item.request.request_id,
@@ -377,12 +398,17 @@ function TelemedRoom() {
               .maybeSingle();
             setDoctorInfo(doctorRow);
           }
-        } catch (_) {}
+        } catch (error) {
+          console.warn('Failed to hydrate case/patient info after accepting queue item', error);
+        }
       }
 
-      // Remove accepted item from queue panel
-      setQueueItems((prev) => prev.filter((q) => q.request.request_id !== item.request.request_id));
-      lastQueueCountRef.current = Math.max(0, lastQueueCountRef.current - 1);
+      try {
+        const items = await dispatch(fetchDoctorQueueThunk(doctorId)).unwrap();
+        lastQueueCountRef.current = items.length;
+      } catch (error) {
+        console.warn('Failed to refresh doctor queue after accept', error);
+      }
       message.success("รับเคสและสร้างห้องปรึกษาเรียบร้อย");
     } catch (error) {
       message.error(error.message || "ไม่สามารถรับเคสได้");
@@ -420,7 +446,9 @@ function TelemedRoom() {
     if (!consultation?.consultation_id) return;
     setIsProcessingSummary(true);
     try {
-      const res = await pauseConsultation(consultation.consultation_id);
+      const res = await dispatch(
+        pauseConsultationById({ consultationId: consultation.consultation_id })
+      ).unwrap();
       if (res?.consultation) {
         setConsultation(res.consultation);
       } else {
@@ -444,7 +472,9 @@ function TelemedRoom() {
 
     setIsProcessingSummary(true);
     try {
-      const res = await moveToSummarizing(consultation.consultation_id);
+      const res = await dispatch(
+        moveConsultationToSummarizing({ consultationId: consultation.consultation_id })
+      ).unwrap();
       const updatedConsultation = res?.consultation || consultation;
       if (updatedConsultation) setConsultation(updatedConsultation);
       emitDoctorReadySignal('ได้ส่งสัญญาณเชิญผู้ป่วยกลับมาฟังสรุปแล้ว', updatedConsultation);
@@ -459,7 +489,9 @@ function TelemedRoom() {
     if (!consultation?.consultation_id) return;
     setIsProcessingSummary(true);
     try {
-      const res = await completeSummary(consultation.consultation_id);
+      const res = await dispatch(
+        completeConsultationSummary({ consultationId: consultation.consultation_id })
+      ).unwrap();
       if (res?.consultation) setConsultation(res.consultation);
       const consultationIdToUse = res?.consultation?.consultation_id || consultation.consultation_id;
       let summaryDoc = res?.documents?.summary_pdf || null;
@@ -484,7 +516,9 @@ function TelemedRoom() {
     if (!consultation?.consultation_id) return;
     setIsProcessingSummary(true);
     try {
-      const res = await moveToAwaitingPayment(consultation.consultation_id);
+      const res = await dispatch(
+        moveConsultationToAwaitingPayment({ consultationId: consultation.consultation_id })
+      ).unwrap();
       if (res?.consultation) setConsultation(res.consultation);
       message.success('ส่งต่อให้ผู้ป่วยชำระเงินแล้ว');
       if (isDoctor) {
@@ -508,7 +542,9 @@ function TelemedRoom() {
     if (!consultation?.consultation_id) return;
     setPaymentProcessing(true);
     try {
-      const res = await markConsultationPaid(consultation.consultation_id, {});
+      const res = await dispatch(
+        markConsultationAsPaid({ consultationId: consultation.consultation_id })
+      ).unwrap();
       if (res?.consultation) setConsultation(res.consultation);
       message.success('บันทึกการชำระเงินเรียบร้อย');
       if (isPatient) {
@@ -798,7 +834,9 @@ function TelemedRoom() {
           .order('created_at', { ascending: false })
           .maybeSingle();
         if (data?.request_id) setRequestId(data.request_id);
-      } catch (_) {}
+      } catch (error) {
+        console.warn('Failed to load match request id for telemed room', error);
+      }
     };
     // If we already have it from queue accept, skip
     if (!requestId) loadRequest();
@@ -811,7 +849,9 @@ function TelemedRoom() {
     if (isPatient && currentStatus && currentStatus !== prevStatus) {
       try {
         localStorage.setItem(PATIENT_STATUS_KEY, currentStatus);
-      } catch (_) {}
+      } catch (error) {
+        console.warn('Failed to persist patient telemed status', error);
+      }
       if (currentStatus === 'on_hold') {
         setVideoControlSignal({ type: 'hangup', retainMedia: true, target: 'patient', ts: Date.now() });
       } else if (currentStatus === 'awaiting_payment') {
@@ -926,7 +966,7 @@ function TelemedRoom() {
         )}
 
   <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 3fr) minmax(0, 1.2fr)", gap: 16, alignItems: "start" }}>
-          <Card style={{ minHeight: 580 }} bodyStyle={{ padding: 0, height: "100%" }}>
+          <Card style={{ minHeight: 580 }} styles={{ body: { padding: 0, height: "100%" } }}>
             <TwilioVideoRoom
               defaultRoomName={defaultRoomName}
               defaultIdentity={defaultIdentity}
@@ -941,21 +981,32 @@ function TelemedRoom() {
                   if (consultation?.consultation_id) {
                     if (isDoctor) {
                       // Persist start; backend will set status=doctor_in_room and started_at, and may store room_id if provided
-                      await markConsultationStarted(consultation.consultation_id, room?.sid || null);
+                      await dispatch(
+                        markConsultationStartedThunk({
+                          consultationId: consultation.consultation_id,
+                          roomId: room?.sid || null,
+                        })
+                      ).unwrap();
                       // Reflect status locally for smoother UX (no room_sid in schema)
                       setConsultation((prev) => (prev ? { ...prev, status: 'doctor_in_room' } : prev));
                     }
                     // Persist active consultation for patient to enable guarded menu
                     try {
                       localStorage.setItem('activeConsultationId', consultation.consultation_id);
-                    } catch {}
+                    } catch (error) {
+                      console.warn('Failed to persist active consultation id', error);
+                    }
                   }
-                } catch (_) {}
+                } catch (error) {
+                  console.warn('Twilio onConnected side effects failed', error);
+                }
               }}
               onDisconnected={async () => {
                 try {
                   localStorage.removeItem('activeConsultationId');
-                } catch {}
+                } catch (error) {
+                  console.warn('Failed to clear active consultation id on disconnect', error);
+                }
                 if (isPatient) {
                   if (consultation?.status === 'completed') {
                     clearPatientTelemedFlags();
@@ -969,11 +1020,11 @@ function TelemedRoom() {
                 <Button
                   type="primary"
                   onClick={async () => {
-                    if (!queueItems[0]) {
+                    if (!doctorQueue[0]) {
                       message.info('ยังไม่มีคำขอให้เรียก');
                       return;
                     }
-                    await handleAcceptFromQueue(queueItems[0]);
+                    await handleAcceptFromQueue(doctorQueue[0]);
                   }}
                 >
                   โทรหาผู้ป่วย (รับเคสล่าสุด)
@@ -1164,12 +1215,12 @@ function TelemedRoom() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxHeight: 'calc(100vh - 260px)', overflowY: 'auto' }}>
             {isDoctor && (
-              <Card size="small" title={<span>Incoming Queue <Badge count={queueItems.length} /></span>}>
+              <Card size="small" title={<span>Incoming Queue <Badge count={doctorQueue.length} /></span>}>
                 {queueLoading ? (
                   <Spin />
-                ) : queueItems.length > 0 ? (
+                ) : doctorQueue.length > 0 ? (
                   <Space direction="vertical" style={{ width: "100%" }}>
-                    {queueItems.map((item) => (
+                    {doctorQueue.map((item) => (
                       <Card key={item.request.request_id} size="small">
                         <Space direction="vertical" style={{ width: "100%" }}>
                           <Space wrap>
